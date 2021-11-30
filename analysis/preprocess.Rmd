@@ -25,6 +25,7 @@ library(reticulate)
 devtools::load_all()
 
 N_CORES <- 45
+FORCE <- TRUE
 ```
 
 ```{r, message=FALSE}
@@ -74,7 +75,7 @@ con <- readOrCreate(DataPath('ASD/con.rds'), function() {
                  dub.threshold=0.3, mc.preschedule=TRUE, n.cores=N_CORES, progress=FALSE)
 
   createConos(p2s, sample.meta=sample_metadata, cell.meta=cell_metadata, n.cores=N_CORES)
-}) %>% Conos$new()
+}, force=FORCE) %>% Conos$new()
 
 con$plotGraph(groups=con$misc$cell_metadata$cellType, size=0.2, alpha=0.2)
 ```
@@ -109,7 +110,7 @@ con <- readOrCreate(DataPath('ASD/con.rds'), function() {
   p2s <- plapply(mat_per_samp, createPagoda, dub.scores=dub_info$scores, dub.threshold=0.17,
                  mc.preschedule=TRUE, n.cores=N_CORES, progress=FALSE)
   createConos(p2s, sample.meta=sample_metadata, cell.meta=cell_metadata, n.cores=N_CORES)
-}) %>% Conos$new()
+}, force=FORCE) %>% Conos$new()
 
 con$plotGraph(groups=con$misc$cell_metadata$cellType, size=0.1, alpha=0.1)
 ```
@@ -128,7 +129,7 @@ con <- readOrCreate(DataPath('EP/con.rds'), function() {
 
   con.pap$samples %>% lapply(pagoda2::Pagoda2$new) %>%
     createConos(sample.meta=sample.metadata, cell.meta=cell.metadata, k=40, n.cores=N_CORES)
-}) %>% Conos$new()
+}, force=FORCE) %>% Conos$new()
 
 con$plotGraph(groups=con$misc$cell_metadata$l4, size=0.1, alpha=0.1, font.size=c(2, 3))
 ```
@@ -158,7 +159,7 @@ con <- readOrCreate(DataPath('MS/con.rds'), function() {
                  dub.threshold=0.2, mc.preschedule=TRUE, n.cores=N_CORES, progress=FALSE)
 
   createConos(p2s, sample.meta=sample.metadata, cell.meta=cell.metadata, n.cores=N_CORES)
-}) %>% Conos$new()
+}, force=FORCE) %>% Conos$new()
 
 con$plotGraph(groups=con$misc$cell_metadata$cell_type, size=0.1, alpha=0.1)
 ```
@@ -189,7 +190,7 @@ con <- readOrCreate(DataPath('PF/con.rds'), function() {
   mat.per.samp <- splitMatrixByFactor(mat, cell.metadata$sample)
   p2s <- plapply(mat.per.samp, createPagoda, mc.preschedule=TRUE, n.cores=N_CORES, progress=FALSE)
   createConos(p2s, sample.meta=sample.metadata, cell.meta=cell.metadata, n.cores=N_CORES)
-}) %>% Conos$new()
+}, force=FORCE) %>% Conos$new()
 
 con$plotGraph(groups=con$misc$cell_metadata$cellType, size=0.1, alpha=0.1)
 ```
