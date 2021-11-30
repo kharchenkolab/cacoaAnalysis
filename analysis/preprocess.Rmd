@@ -1,0 +1,229 @@
+---
+title: 'Preprocess the MS dataset'
+date: "`r Sys.Date()`"
+author: "[Viktor Petukhov](https://github.com/VPetukhov/)"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: '3'
+    toc_float: true
+    df_print: paged
+---
+
+## Libraries
+
+```{r libs, message=FALSE}
+library(tidyverse)
+library(magrittr)
+library(sccore)
+library(pagoda2)
+library(conos)
+library(dataorganizer)
+library(Matrix)
+library(reticulate)
+
+devtools::load_all()
+
+N_CORES <- 45
+```
+
+```{r, message=FALSE}
+virtualenv_create("r-scrublet")
+virtualenv_install("r-scrublet", c("scrublet", "matplotlib"))
+use_virtualenv("r-scrublet")
+mpl <- import("matplotlib")
+mpl$use('Agg') # Otherwise it shows Qt error in RStudio
+scrublet <- import("scrublet")
+
+estimateDoubletInfo <- function(mats, progress=FALSE) {
+  dub.info <- sccore::plapply(mats, function(m) {
+    suppressMessages(scrublet$Scrublet(t(m), random_state=as.integer(42))$scrub_doublets()) %>%
+      lapply(setNames, colnames(m))
+  }, n.cores=1, progress=progress)
+
+  lapply(c(scores=1, mask=2), function(i) {
+    lapply(dub.info, `[[`, i) %>% unname() %>% unlist()
+  })
+}
+```
+
+## Alzheimer
+
+Cells are already filtered by mit. fraction, and doublets are removed. We filter only by minimum 500 UMIs per cell and scrublet scores.
+
+```{r, message=FALSE, warning=FALSE, fig.width=5, fig.height=5}
+con <- readOrCreate(DataPath('ASD/con.rds'), function() {
+  mat <- DataPath("AZ/cell_counts.csv") %>% data.table::fread(sep=",") %>%
+    {set_rownames(mltools::sparsify(.[, 2:ncol(.)]), .$V1)} %>%
+    .[rowSums(. > 0) >= 10,]
+
+  cell_metadata <- DataPath("AZ/cell_metadata.csv") %>% read_delim(delim='\t') %>%
+    rename(cell=sampleID, sample=patient) %>%
+    select(cell, batch, sample, sex, cellType, subclustID) %>%
+    filter(!grepl("un", sample), !(cellType %in% c('doublet', 'unID')))
+
+  sample_metadata <- group_by(cell_metadata, batch, sample, sex) %>%
+    summarise(n=n()) %>% select(-n) %>% lapply(setNames, .$sample) %>% ungroup()
+
+  cell_metadata %<>% lapply(setNames, .$cell)
+
+  mat_per_samp <- splitMatrixByFactor(mat, cell_metadata$sample)
+
+  dub_info <- estimateDoubletInfo(mat_per_samp)
+  p2s <- plapply(mat_per_samp, createPagoda, min.transcripts.per.cell=500, dub.scores=dub_info$scores,
+                 dub.threshold=0.3, mc.preschedule=TRUE, n.cores=N_CORES, progress=FALSE)
+
+  createConos(p2s, sample.meta=sample_metadata, cell.meta=cell_metadata, n.cores=N_CORES)
+}) %>% Conos$new()
+
+con$plotGraph(groups=con$misc$cell_metadata$cellType, size=0.2, alpha=0.2)
+```
+
+```{r, message=FALSE, warning=FALSE}
+rm(con); gc();
+```
+
+## Autism
+
+Cells are already filtered by mitochondrial fraction of 0.05 and UMI threshold ~500, no additional filtration is needed.
+
+```{r, message=FALSE, warning=FALSE, fig.width=5, fig.height=5}
+con <- readOrCreate(DataPath('ASD/con.rds'), function() {
+  mat <- Seurat::Read10X(DataPath("ASD")) %>% .[rowSums(. > 0) >= 10,]
+  meta <- read_delim(DataPath("ASD/meta.txt"), delim='\t') %>%
+    rename(cellType=cluster, PMI=`post-mortem interval (hours)`) %>%
+    mutate(cellType=gsub("-I(I)?", "", cellType))
+
+  sample_metadata <- meta %>%
+    group_by(sample, individual, region, age, sex, diagnosis, Capbatch, Seqbatch) %>%
+    summarise(PMI=median(PMI)) %>% ungroup() %>% lapply(setNames, .$sample)
+
+  sample_metadata$region_hr <- sample_metadata$sample %>% strsplit('_') %>% sapply(`[[`, 2)
+
+  cell_metadata <- meta %>% lapply(setNames, .$cell)
+
+  mat_per_samp <- splitMatrixByFactor(mat, cell_metadata$sample)
+  mat_per_cap <- splitMatrixByFactor(mat, cell_metadata$Capbatch)
+
+  dub_info <- estimateDoubletInfo(mat_per_cap)
+  p2s <- plapply(mat_per_samp, createPagoda, dub.scores=dub_info$scores, dub.threshold=0.17,
+                 mc.preschedule=TRUE, n.cores=N_CORES, progress=FALSE)
+  createConos(p2s, sample.meta=sample_metadata, cell.meta=cell_metadata, n.cores=N_CORES)
+}) %>% Conos$new()
+
+con$plotGraph(groups=con$misc$cell_metadata$cellType, size=0.1, alpha=0.1)
+```
+
+```{r, message=FALSE, warning=FALSE}
+rm(con); gc();
+```
+
+## Epilepsy
+
+```{r, message=FALSE, warning=FALSE, fig.width=5, fig.height=5}
+con <- readOrCreate(DataPath('EP/con.rds'), function() {
+  con.pap <- read_rds(DataPath("EP/con_filt_samples.rds")) %>% conos::Conos$new()
+  cell.metadata <- DataPath("EP/annotation.csv") %>% read_csv() %>% lapply(setNames, .$cell)
+  sample.metadata <- DataPath("EP/sample_info.csv") %>% read_csv() %>% lapply(setNames, .$Alias)
+
+  con.pap$samples %>% lapply(pagoda2::Pagoda2$new) %>%
+    createConos(sample.meta=sample.metadata, cell.meta=cell.metadata, k=40, n.cores=N_CORES)
+}) %>% Conos$new()
+
+con$plotGraph(groups=con$misc$cell_metadata$l4, size=0.1, alpha=0.1, font.size=c(2, 3))
+```
+
+```{r, message=FALSE, warning=FALSE}
+rm(con); gc();
+```
+
+## MS
+
+The threshold on transcripts here is set only because there was 1 almost empty cell reported, all other cells already had enough transcripts.
+
+```{r, message=FALSE, warning=FALSE, fig.width=5, fig.height=5}
+con <- readOrCreate(DataPath('MS/con.rds'), function() {
+  mat <- Seurat::Read10X(DataPath("MS")) %>% .[rowSums(. > 0) >= 10,]
+  meta <- read_delim(DataPath("MS/meta.txt"), delim='\t') %>%
+    mutate(cell_type=gsub("-(Cntl|MS(-1|-2)?)", "", x=cell_type))
+
+  sample.metadata <- meta[,5:14] %>% split(.$sample) %>% lapply(`[`, 1,) %>%
+    do.call(rbind, .) %>% lapply(setNames, .$sample)
+  cell.metadata <- meta %>% lapply(setNames, .$cell)
+
+  mat.per.samp <- splitMatrixByFactor(mat, cell.metadata$sample)
+  mat.per.cap <- splitMatrixByFactor(mat, cell.metadata$Capbatch)
+  dub.info <- estimateDoubletInfo(mat.per.cap)
+  p2s <- plapply(mat.per.samp, createPagoda, min.transcripts.per.cell=800, dub.scores=dub.info$scores,
+                 dub.threshold=0.2, mc.preschedule=TRUE, n.cores=N_CORES, progress=FALSE)
+
+  createConos(p2s, sample.meta=sample.metadata, cell.meta=cell.metadata, n.cores=N_CORES)
+}) %>% Conos$new()
+
+con$plotGraph(groups=con$misc$cell_metadata$cell_type, size=0.1, alpha=0.1)
+```
+
+```{r, message=FALSE, warning=FALSE}
+rm(con); gc();
+```
+
+## PF
+
+The paper already performed the filtration
+
+```{r, fig.width=5, fig.height=5}
+con <- readOrCreate(DataPath('PF/con.rds'), function() {
+  cell.metadata <- read_csv(DataPath("PF/cell_metadata.csv")) %>% rename(cell=X1) %>%
+    filter(Diagnosis %in% c("Control", "IPF")) %>%
+    rename(sample=Sample_Name, cellType=celltype)
+
+  sample.metadata <- cell.metadata %>%
+    group_by(sample, Sample_Source, Diagnosis, Status, orig.ident) %>%
+    summarise(n=n()) %>% select(-n) %>%
+    lapply(setNames, .$sample)
+
+  mat <- DataPath("PF") %>% Seurat::Read10X(gene.column=1) %>%
+    .[,cell.metadata$cell] %>% .[rowSums(. > 0) >= 10,]
+
+  cell.metadata %<>% lapply(setNames, .$cell)
+  mat.per.samp <- splitMatrixByFactor(mat, cell.metadata$sample)
+  p2s <- plapply(mat.per.samp, createPagoda, mc.preschedule=TRUE, n.cores=N_CORES, progress=FALSE)
+  createConos(p2s, sample.meta=sample.metadata, cell.meta=cell.metadata, n.cores=N_CORES)
+}) %>% Conos$new()
+
+con$plotGraph(groups=con$misc$cell_metadata$cellType, size=0.1, alpha=0.1)
+```
+
+```{r, message=FALSE, warning=FALSE}
+rm(con); gc();
+```
+
+## SCC
+
+```{r, fig.width=5, fig.height=5}
+con <- readOrCreate(DataPath('SCC/con.rds'), function() {
+  mat <- data.table::fread(DataPath("SCC/counts.txt"), sep="\t") %>%
+    {set_rownames(mltools::sparsify(.[3:nrow(.), 2:ncol(.)]), .$V1[3:nrow(.)])}
+
+  cell.metadata <- read_delim(DataPath('SCC/cell_metadata.txt'), delim='\t') %>%
+    filter(!(level3_celltype %in% c('Multiplet', 'Keratinocyte'))) %>% rename(cell=nCount_RNA)
+  cell.metadata$sample <- cell.metadata$cell %>% strsplit("_") %>%
+    sapply(function(x) paste(x[1:2], collapse='_'))
+  cell.metadata$level3_celltype %<>% gsub("(Normal|Tumor)_", "", .)
+  cell.metadata %<>% lapply(setNames, .$cell)
+
+  mat <- mat[rowSums(mat > 0) >= 10, cell.metadata$cell]
+  mat.per.samp <- splitMatrixByFactor(mat, cell.metadata$sample)
+
+  p2s <- plapply(mat.per.samp, createPagoda, min.transcripts.per.cell=800,
+                mc.preschedule=TRUE, n.cores=N_CORES, progress=FALSE)
+
+  createConos(p2s, sample.meta=sample.metadata, cell.meta=cell.metadata, n.cores=N_CORES)
+}) %>% Conos$new()
+
+con$plotGraph(groups=con$misc$cell_metadata$level3_celltype, size=0.1, alpha=0.1)
+```
+
+```{r, message=FALSE, warning=FALSE}
+rm(con); gc();
+```
