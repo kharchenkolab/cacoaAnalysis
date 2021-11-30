@@ -218,7 +218,7 @@ con <- readOrCreate(DataPath('SCC/con.rds'), function() {
   p2s <- plapply(mat.per.samp, createPagoda, min.transcripts.per.cell=800,
                 mc.preschedule=TRUE, n.cores=N_CORES, progress=FALSE)
 
-  createConos(p2s, sample.meta=sample.metadata, cell.meta=cell.metadata, n.cores=N_CORES)
+  createConos(p2s, sample.meta=NULL, cell.meta=cell.metadata, n.cores=N_CORES)
 }) %>% Conos$new()
 
 con$plotGraph(groups=con$misc$cell_metadata$level3_celltype, size=0.1, alpha=0.1)
