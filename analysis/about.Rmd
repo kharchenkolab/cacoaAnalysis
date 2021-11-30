@@ -7,4 +7,7 @@ editor_options:
   chunk_output_type: console
 ---
 
-Describe your project.
+Analysis for the Cacoa publication.
+
+See:
+- [Cacoa GitHub](https://github.com/kharchenkolab/cacoa)
