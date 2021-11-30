@@ -28,3 +28,4 @@ Remotes:
     khodosevichlab/dataorganizer
 Depends: 
     tidyverse
+RoxygenNote: 7.1.1
