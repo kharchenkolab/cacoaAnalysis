@@ -58,23 +58,23 @@ con <- readOrCreate(DataPath('ASD/con.rds'), function() {
     {set_rownames(mltools::sparsify(.[, 2:ncol(.)]), .$V1)} %>%
     .[rowSums(. > 0) >= 10,]
 
-  cell_metadata <- DataPath("AZ/cell_metadata.csv") %>% read_delim(delim='\t') %>%
+  cell.metadata <- DataPath("AZ/cell_metadata.csv") %>% read_delim(delim='\t') %>%
     rename(cell=sampleID, sample=patient) %>%
     select(cell, batch, sample, sex, cellType, subclustID) %>%
     filter(!grepl("un", sample), !(cellType %in% c('doublet', 'unID')))
 
-  sample_metadata <- group_by(cell_metadata, batch, sample, sex) %>%
-    summarise(n=n()) %>% select(-n) %>% lapply(setNames, .$sample) %>% ungroup()
+  sample.metadata <- group_by(cell.metadata, batch, sample, sex) %>%
+    summarise(n=n()) %>% select(-n) %>% lapply(setNames, .$sample)
 
-  cell_metadata %<>% lapply(setNames, .$cell)
+  cell.metadata %<>% lapply(setNames, .$cell)
 
-  mat_per_samp <- splitMatrixByFactor(mat, cell_metadata$sample)
+  mat.per.samp <- splitMatrixByFactor(mat, cell.metadata$sample)
 
-  dub_info <- estimateDoubletInfo(mat_per_samp)
-  p2s <- plapply(mat_per_samp, createPagoda, min.transcripts.per.cell=500, dub.scores=dub_info$scores,
+  dub.info <- estimateDoubletInfo(mat.per.samp)
+  p2s <- plapply(mat.per.samp, createPagoda, min.transcripts.per.cell=500, dub.scores=dub.info$scores,
                  dub.threshold=0.3, mc.preschedule=TRUE, n.cores=N_CORES, progress=FALSE)
 
-  createConos(p2s, sample.meta=sample_metadata, cell.meta=cell_metadata, n.cores=N_CORES)
+  createConos(p2s, sample.meta=sample.metadata, cell.meta=cell.metadata, n.cores=N_CORES)
 }, force=FORCE) %>% Conos$new()
 
 con$plotGraph(groups=con$misc$cell_metadata$cellType, size=0.2, alpha=0.2)
@@ -95,21 +95,21 @@ con <- readOrCreate(DataPath('ASD/con.rds'), function() {
     rename(cellType=cluster, PMI=`post-mortem interval (hours)`) %>%
     mutate(cellType=gsub("-I(I)?", "", cellType))
 
-  sample_metadata <- meta %>%
+  sample.metadata <- meta %>%
     group_by(sample, individual, region, age, sex, diagnosis, Capbatch, Seqbatch) %>%
-    summarise(PMI=median(PMI)) %>% ungroup() %>% lapply(setNames, .$sample)
+    summarise(PMI=median(PMI)) %>% lapply(setNames, .$sample)
 
-  sample_metadata$region_hr <- sample_metadata$sample %>% strsplit('_') %>% sapply(`[[`, 2)
+  sample.metadata$region_hr <- sample.metadata$sample %>% strsplit('_') %>% sapply(`[[`, 2)
 
-  cell_metadata <- meta %>% lapply(setNames, .$cell)
+  cell.metadata <- meta %>% lapply(setNames, .$cell)
 
-  mat_per_samp <- splitMatrixByFactor(mat, cell_metadata$sample)
-  mat_per_cap <- splitMatrixByFactor(mat, cell_metadata$Capbatch)
+  mat.per.samp <- splitMatrixByFactor(mat, cell.metadata$sample)
+  mat.per.cap <- splitMatrixByFactor(mat, cell.metadata$Capbatch)
 
-  dub_info <- estimateDoubletInfo(mat_per_cap)
-  p2s <- plapply(mat_per_samp, createPagoda, dub.scores=dub_info$scores, dub.threshold=0.17,
+  dub.info <- estimateDoubletInfo(mat.per.cap)
+  p2s <- plapply(mat.per.samp, createPagoda, dub.scores=dub.info$scores, dub.threshold=0.17,
                  mc.preschedule=TRUE, n.cores=N_CORES, progress=FALSE)
-  createConos(p2s, sample.meta=sample_metadata, cell.meta=cell_metadata, n.cores=N_CORES)
+  createConos(p2s, sample.meta=sample.metadata, cell.meta=cell.metadata, n.cores=N_CORES)
 }, force=FORCE) %>% Conos$new()
 
 con$plotGraph(groups=con$misc$cell_metadata$cellType, size=0.1, alpha=0.1)
@@ -124,14 +124,15 @@ rm(con); gc();
 ```{r, message=FALSE, warning=FALSE, fig.width=5, fig.height=5}
 con <- readOrCreate(DataPath('EP/con.rds'), function() {
   con.pap <- read_rds(DataPath("EP/con_filt_samples.rds")) %>% conos::Conos$new()
-  cell.metadata <- DataPath("EP/annotation.csv") %>% read_csv() %>% lapply(setNames, .$cell)
+  cell.metadata <- DataPath("EP/annotation.csv") %>% read_csv() %>%
+    rename(cellType=l4) %>% lapply(setNames, .$cell)
   sample.metadata <- DataPath("EP/sample_info.csv") %>% read_csv() %>% lapply(setNames, .$Alias)
 
   con.pap$samples %>% lapply(pagoda2::Pagoda2$new) %>%
     createConos(sample.meta=sample.metadata, cell.meta=cell.metadata, k=40, n.cores=N_CORES)
 }, force=FORCE) %>% Conos$new()
 
-con$plotGraph(groups=con$misc$cell_metadata$l4, size=0.1, alpha=0.1, font.size=c(2, 3))
+con$plotGraph(groups=con$misc$cell_metadata$cellType, size=0.1, alpha=0.1, font.size=c(2, 3))
 ```
 
 ```{r, message=FALSE, warning=FALSE}
@@ -146,7 +147,8 @@ The threshold on transcripts here is set only because there was 1 almost empty c
 con <- readOrCreate(DataPath('MS/con.rds'), function() {
   mat <- Seurat::Read10X(DataPath("MS")) %>% .[rowSums(. > 0) >= 10,]
   meta <- read_delim(DataPath("MS/meta.txt"), delim='\t') %>%
-    mutate(cell_type=gsub("-(Cntl|MS(-1|-2)?)", "", x=cell_type))
+    mutate(cell_type=gsub("-(Cntl|MS(-1|-2)?)", "", x=cell_type)) %>%
+    rename(cellType=cell_type)
 
   sample.metadata <- meta[,5:14] %>% split(.$sample) %>% lapply(`[`, 1,) %>%
     do.call(rbind, .) %>% lapply(setNames, .$sample)
@@ -161,7 +163,7 @@ con <- readOrCreate(DataPath('MS/con.rds'), function() {
   createConos(p2s, sample.meta=sample.metadata, cell.meta=cell.metadata, n.cores=N_CORES)
 }, force=FORCE) %>% Conos$new()
 
-con$plotGraph(groups=con$misc$cell_metadata$cell_type, size=0.1, alpha=0.1)
+con$plotGraph(groups=con$misc$cell_metadata$cellType, size=0.1, alpha=0.1)
 ```
 
 ```{r, message=FALSE, warning=FALSE}
@@ -207,10 +209,11 @@ con <- readOrCreate(DataPath('SCC/con.rds'), function() {
     {set_rownames(mltools::sparsify(.[3:nrow(.), 2:ncol(.)]), .$V1[3:nrow(.)])}
 
   cell.metadata <- read_delim(DataPath('SCC/cell_metadata.txt'), delim='\t') %>%
-    filter(!(level3_celltype %in% c('Multiplet', 'Keratinocyte'))) %>% rename(cell=nCount_RNA)
+    filter(!(level3_celltype %in% c('Multiplet', 'Keratinocyte'))) %>%
+    rename(cell=nCount_RNA, cellType=level3_celltype)
   cell.metadata$sample <- cell.metadata$cell %>% strsplit("_") %>%
     sapply(function(x) paste(x[1:2], collapse='_'))
-  cell.metadata$level3_celltype %<>% gsub("(Normal|Tumor)_", "", .)
+  cell.metadata$cellType %<>% gsub("(Normal|Tumor)_", "", .)
   cell.metadata %<>% lapply(setNames, .$cell)
 
   mat <- mat[rowSums(mat > 0) >= 10, cell.metadata$cell]
@@ -220,9 +223,9 @@ con <- readOrCreate(DataPath('SCC/con.rds'), function() {
                 mc.preschedule=TRUE, n.cores=N_CORES, progress=FALSE)
 
   createConos(p2s, sample.meta=NULL, cell.meta=cell.metadata, n.cores=N_CORES)
-}) %>% Conos$new()
+}, force=FORCE) %>% Conos$new()
 
-con$plotGraph(groups=con$misc$cell_metadata$level3_celltype, size=0.1, alpha=0.1)
+con$plotGraph(groups=con$misc$cell_metadata$cellType, size=0.1, alpha=0.1)
 ```
 
 ```{r, message=FALSE, warning=FALSE}
