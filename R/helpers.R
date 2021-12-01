@@ -20,7 +20,7 @@ createConos <- function(p2s, sample.meta, cell.meta, n.cores=1, k=20, ...) {
   con <- conos::Conos$new(p2s, n.cores=n.cores)
   con$buildGraph(k=k, k.self=5, space='PCA', ncomps=30, n.odgenes=2000, matching.method='mNN',
                  metric='angular', verbose=TRUE)
-  con$embedGraph(method='UMAP', min.prob.lower=1e-6, verbose=FALSE, ...);
+  con$embedGraph(method='UMAP', min.prob.lower=1e-5, verbose=FALSE, ...);
 
   con$misc$cell_metadata <- lapply(cell.meta, `[`, names(con$getDatasetPerCell()))
   con$misc$sample_metadata <- lapply(sample.meta, `[`, names(con$samples))
@@ -45,7 +45,6 @@ initializeCacoa <- function(dataset.name, ...){
   con <- dataorganizer::DataPath(dataset.name, "con.rds") %>%
     readr::read_rds() %>% conos::Conos$new()
   ref.level <- 'Control'
-  cell.groups <- con$misc$cell_metadata$cellType # works for most datasets
 
   if (dataset.name == 'AZ') {
     target.level <- 'Alzheimer'
@@ -58,11 +57,9 @@ initializeCacoa <- function(dataset.name, ...){
     target.level <- 'Epilepsy'
     sample.groups <- con$misc$sample_metadata$Alias %>%
       {setNames(ifelse(startsWith(., 'E'), target.level, ref.level), .)}
-    cell.groups <- con$misc$cell_metadata$l4
   } else if (dataset.name == 'MS') {
     target.level <- 'MS'
     sample.groups <- con$misc$sample_metadata$diagnosis
-    cell.groups <- con$misc$cell_metadata$cell_type
   } else if (dataset.name == 'PF') {
     target.level <- 'IPF'
     sample.groups <- con$misc$sample_metadata$Diagnosis
@@ -70,11 +67,10 @@ initializeCacoa <- function(dataset.name, ...){
     target.level <- 'Tumor'
     sample.groups <- names(con$samples) %>%
       {setNames(ifelse(grepl('Normal', .), ref.level, target.level), .)}
-    cell.groups <- con$misc$cell_metadata$level3_celltype
   }
 
   cao <- cacoa::Cacoa$new(
-    con, sample.groups=sample.groups, cell.groups=cell.groups,
+    con, sample.groups=sample.groups, cell.groups=con$misc$cell_metadata$cellType,
     target.level=target.level, ref.level=ref.level, ...
   )
 
@@ -99,7 +95,7 @@ runCacoaAnalyses <- function(cao, cluster.free.de=FALSE, cluster.based.de=FALSE,
                              verbose=2) {
   verb1 <- (verbose > 0)
   verb2 <- (verbose > 1)
-  cao$estimateExpressionShiftMagnitudes(n.permutations=2500, verbose=verb1)
+  cao$estimateExpressionShiftMagnitudes(n.permutations=2500, verbose=verb2)
   cao$estimateCellLoadings()
 
   for (met in c('kde', 'graph')) {
@@ -107,20 +103,22 @@ runCacoaAnalyses <- function(cao, cluster.free.de=FALSE, cluster.based.de=FALSE,
       next
 
     cn <- paste0('cell.density.', met)
-    cao$estimateCellDensity(method=met, estimate.variation=FALSE, verbose=verb1, name=cn, beta=10)
-    cao$estimateDiffCellDensity(type='wilcox', adjust.pvalues=TRUE, verbose=verb1, n.permutations=500, name=cn)
-    cao$estimateDiffCellDensity(type='subtract', adjust.pvalues=FALSE, verbose=verb1, name=cn)
+    cao$estimateCellDensity(method=met, estimate.variation=FALSE, verbose=verb2, name=cn, beta=10)
+    cao$estimateDiffCellDensity(type='wilcox', adjust.pvalues=TRUE, verbose=verb2, n.permutations=500, name=cn)
+    cao$estimateDiffCellDensity(type='subtract', adjust.pvalues=FALSE, verbose=verb2, name=cn)
   }
 
-  cao$estimateClusterFreeExpressionShifts(n.top.genes=3000, gene.selection="expression", verbose=verb2)
+  cao$estimateClusterFreeExpressionShifts(n.top.genes=3000, gene.selection="expression", verbose=verb1)
 
   if (cluster.free.de) {
-    cao$estimateClusterFreeDE(n.top.genes=1500, min.expr.frac=0.01, adjust.pvalues=TRUE, smooth=TRUE)
-    cao$smoothClusterFreeZScores(progress.chunks=10, z.adj=TRUE)
+    cao$estimateClusterFreeDE(n.top.genes=1500, min.expr.frac=0.01, adjust.pvalues=TRUE, smooth=TRUE, verbose=verb1)
+    cao$smoothClusterFreeZScores(progress.chunks=10, z.adj=TRUE, verbose=verb1)
   }
 
   if (cluster.based.de) {
-    cao$estimateDEPerCellType(independent.filtering=TRUE, test='DESeq2.Wald')
-    cao$estimateOntology(type="GSEA", org.db=org.Hs.eg.db::org.Hs.eg.db)
+    cao$estimateDEPerCellType(independent.filtering=TRUE, test='DESeq2.Wald', verbose=verb1)
+    cao$estimateOntology(type="GSEA", org.db=org.Hs.eg.db::org.Hs.eg.db, verbose=verb1)
   }
+
+  return(cao)
 }
