@@ -1,0 +1,82 @@
+---
+title: 'Simulation of pairwise distances'
+date: "`r Sys.Date()`"
+author: "[Viktor Petukhov](https://github.com/VPetukhov/)"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: '3'
+    toc_float: true
+    df_print: paged
+---
+
+```{r libs, include=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(magrittr)
+library(sccore)
+library(cacoa)
+
+theme_set(theme_bw())
+
+devtools::load_all()
+
+N_SAMPLES <- 10
+N_CORES <- 10
+```
+
+In these simulations we artificially generate pairwise distance matrix by sampling from two
+normal distributions with controlled distance between their means and controlled variance of
+each distribution. Then, we compare three types of distance estimates:
+
+1. **Shift**: $\textbf{d}_{between} - 0.5 \cdot \left( \mathrm{MED}(\textbf{d}_{case}) + \mathrm{MED}(\textbf{d}_{control}) \right)$
+2. **Total**: $\textbf{d}_{between} - \mathrm{MED}(\textbf{d}_{control})$
+3. **Variance**: $\textbf{d}_{case} - \mathrm{MED}(\textbf{d}_{control})$
+
+## Equal variance, varying mean
+
+First, let us change mean between two conditions, keeping the variance constant.
+
+```{r, fig.width=6, fig.height=6, message=FALSE, warning=FALSE}
+sim_df <- c(1, 2) %>% lapply(function(s) {
+  plapply(seq(0.0, 2.0, 0.2), function(mo) {
+    generateDistanceMatrixSimulations(mean.offset=mo, std.cnt=s, std.disease=s, n.samples=N_SAMPLES)
+  }, n.cores=N_CORES, mc.preschedule=TRUE, fail.on.error=TRUE) %>% do.call(rbind, .)
+}) %>% do.call(rbind, .)
+sim_df$mean.offset %<>% paste0() %>% {factor(., levels=unique(.))}
+sim_df$std.cnt %<>% paste0() %>% {factor(., levels=unique(.))}
+
+plotSimulatedDistances(sim_df, "mean.offset", x.lab="Mean offset") +
+  facet_wrap(~std.cnt, ncol=1, labeller=as_labeller(function(df) paste("Std =", df)))
+```
+
+The plot shows change in expression distances (y-axis) of different types (color) for 
+increasing mean offset between case and control (x-axis) and fixed standard deviation 
+(std=1.0 for the top plot and std=2.0 for the bottom plot). It can be seen that the "Variance" 
+distance does depend on mean offset, while "Shift" and "Total" go up linearly. It is also
+important to note that when variance within condition increase (bottom plot), the sensitivity
+of all distances goes down. So, if two cell types have the same mean shift, 
+but different variance, the cell type with lower variance would have higher normalized distance.
+
+## Equal mean, varying variance
+
+Now, we will fix the mean offset to different values and vary variance within Case samples,
+keeping Control variance fixed (`std=1.0`).
+
+```{r, fig.width=6, fig.height=9}
+sim_df <- c(0, 1, 2) %>% lapply(function(m) {
+  plapply(seq(1, 3.0, 0.2), function(std) {
+    generateDistanceMatrixSimulations(mean.offset=m, std.disease=std, n.samples=N_SAMPLES)
+  }, n.cores=N_CORES, mc.preschedule=TRUE, fail.on.error=TRUE) %>% do.call(rbind, .)
+}) %>% do.call(rbind, .)
+sim_df$mean.offset %<>% paste0() %>% {factor(., levels=unique(.))}
+sim_df$std.disease %<>% paste0() %>% {factor(., levels=unique(.))}
+
+plotSimulatedDistances(sim_df, "std.disease", "Case std") +
+  facet_wrap(~mean.offset, ncol=1, labeller=as_labeller(function(df) paste("Mean offset =", df)))
+```
+
+This panel shows change in expression distances (y-axis) of different types (color) for 
+increasing standard deviation in Case (x-axis) and fixed Mean offset (from 0 to 2 in the 
+three plots top-down). It can be seen that the "Shift" distance is quite insensitive to 
+the changes in variance, while "Variance" distance behaving exactly the same for each offset
+value. It also shows that "Total" distance captures both changes.

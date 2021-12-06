@@ -11,3 +11,6 @@ editor_options:
 Table of content:
 
 - [Dataset pre-processing](./preprocess.html)
+- Simulations
+    - ...
+    - [Different normalization types](./simulation_distances.html)
