@@ -92,7 +92,7 @@ initializeCacoa <- function(dataset.name, ...){
 }
 
 runCacoaAnalyses <- function(cao, cluster.free.de=FALSE, cluster.based.de=FALSE, cell.density=c('graph', 'kde'),
-                             verbose=2) {
+                             verbose=2, n.cores.ontology=1) {
   verb1 <- (verbose > 0)
   verb2 <- (verbose > 1)
   cao$estimateExpressionShiftMagnitudes(n.permutations=2500, verbose=verb2)
@@ -117,7 +117,7 @@ runCacoaAnalyses <- function(cao, cluster.free.de=FALSE, cluster.based.de=FALSE,
 
   if (cluster.based.de) {
     cao$estimateDEPerCellType(independent.filtering=TRUE, test='DESeq2.Wald', verbose=verb1)
-    cao$estimateOntology(type="GSEA", org.db=org.Hs.eg.db::org.Hs.eg.db, verbose=verb1)
+    cao$estimateOntology(type="GSEA", org.db=org.Hs.eg.db::org.Hs.eg.db, verbose=verb1, n.cores=n.cores.ontology)
   }
 
   return(cao)
