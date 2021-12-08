@@ -21,5 +21,6 @@ editor_options:
 
 ### Individual dataset reports
 
+- [Autism](./report_asd.html)
 - [Epilepsy](./report_ep.html)
 - [Multiple Sclerosis](./report_ms.html)
