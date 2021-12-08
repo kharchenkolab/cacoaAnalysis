@@ -1,0 +1,136 @@
+---
+title: 'Cacoa Report Template'
+date: "`r Sys.Date()`"
+author: "[Viktor Petukhov](https://github.com/VPetukhov/)"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: '3'
+    toc_float: true
+    df_print: paged
+---
+
+```{r libs, include=FALSE, message=FALSE}
+library(cacoa)
+library(dataorganizer)
+
+library(ggplot2)
+library(dplyr)
+library(cowplot)
+library(Matrix)
+library(dplyr)
+library(magrittr)
+library(readr)
+library(org.Hs.eg.db)
+
+theme_set(theme_bw())
+```
+
+```{r, message=FALSE, warning=FALSE}
+cao <- read_rds(DataPath("EP/cao.rds")) %>% Cacoa$new()
+cao$sample.groups.palette %<>% .[c(2, 1)]
+cao$plot.params <- list(size=0.1, alpha=0.1, font.size=c(2, 3))
+```
+
+## Dependency on metadata
+
+```{r, fig.width=8, fig.height=4}
+lapply(c("coda", "expression.shifts"), function(sp) {
+  cao$plotSampleDistances(space=sp, legend.position=c(0, 0))
+}) %>% 
+  plot_grid(plotlist=., ncol=2, labels=c("CoDA", "Expression"), hjust=0, label_x=0.02, label_y=0.99)
+```
+
+```{r, fig.width=5, fig.height=3.5}
+sample_meta <- cao$data.object$misc$sample_metadata
+lapply(c("coda", "expression.shifts"), function(sp) {
+  smd <- as.data.frame(sample_meta) %>% dplyr::select(-Name, -Alias)
+  sep.res <- cao$estimateMetadataSeparation(smd, space=sp, dist="l1", name=paste0("md.", sp),
+                                            show.warning=FALSE, n.permutations=50000)
+  (-log10(sep.res$padjust)) %>% {tibble(Type=names(.), value=.)} %>%
+    cacoa:::plotMeanMedValuesPerCellType(type="bar", yline=-log10(0.05), ylab="-log10(separation p-value)") +
+    scale_y_continuous(expand=c(0, 0, 0.05, 0)) +
+    scale_fill_manual(values=rep("#2b8cbe", length(sample_meta))) +
+    theme(axis.title.y=element_text(size=13))
+}) %>% 
+  plot_grid(plotlist=., ncol=2, labels=c("CoDA", "Expression"), hjust=0, label_x=0.2, label_y=0.98)
+```
+
+No significant separation by the provided metadata
+
+## Compositional differences
+
+### Cluster-based
+
+```{r}
+cao$plotCellLoadings()
+```
+
+```{r}
+cao$plotContrastTree()
+```
+
+### Cluster-free
+
+```{r, fig.width=5, fig.height=5}
+g0 <- cao$plotEmbedding(color.by='cell.groups')
+g0
+```
+
+KDE-based:
+
+```{r, fig.width=8, fig.height=4.5}
+cao$plotCellDensity(name='cell.density.kde') %>% plot_grid(plotlist=., ncol=2)
+```
+
+```{r, fig.width=8, fig.height=4}
+plot_grid(g0, cao$plotDiffCellDensity(name='cell.density.kde', legend.position=c(0, 1)), ncol=2)
+```
+
+Graph-based:
+
+```{r, fig.width=8, fig.height=4.5}
+cao$plotCellDensity(name='cell.density.graph') %>% plot_grid(plotlist=., ncol=2)
+```
+
+```{r, fig.width=8, fig.height=4}
+plot_grid(g0, cao$plotDiffCellDensity(name='cell.density.graph', legend.position=c(0, 1)), ncol=2)
+```
+
+## Expression differences
+
+### Cluster-based
+
+All genes:
+
+```{r}
+cao$plotExpressionShiftMagnitudes()
+```
+
+Top DE genes:
+
+```{r}
+cao$estimateExpressionShiftMagnitudes(n.permutations=2500, top.n.genes=500, n.pcs=8, 
+                                      min.samp.per.type=4, name='es.top.de', verbose=TRUE)
+```
+
+```{r}
+cao$plotExpressionShiftMagnitudes(name='es.top.de')
+```
+
+### Cluster-free
+
+```{r, fig.width=8, fig.height=4}
+cao$plotClusterFreeExpressionShifts(legend.position=c(0, 1), font.size=c(1, 2))
+```
+
+```{r}
+cao$estimateGenePrograms(method="leiden", z.adj=TRUE, smooth=FALSE)
+```
+
+```{r, fig.width=12, fig.height=12}
+cao$plotGeneProgramScores(
+  legend.position=c(0, 1), plot.na=FALSE, 
+  adj.list=theme(legend.key.width=unit(8, "pt"), legend.key.height=unit(12, "pt"))
+)
+```

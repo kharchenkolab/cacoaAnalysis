@@ -21,4 +21,5 @@ editor_options:
 
 ### Individual dataset reports
 
-- [Multiple Sclerosis](./ms_report.html)
+- [Epilepsy](./report_ep.html)
+- [Multiple Sclerosis](./report_ms.html)
