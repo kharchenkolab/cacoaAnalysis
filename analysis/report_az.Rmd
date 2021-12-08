@@ -1,0 +1,144 @@
+---
+title: 'Alzheimer Dataset Report'
+date: "`r Sys.Date()`"
+author: "[Viktor Petukhov](https://github.com/VPetukhov/)"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: '3'
+    toc_float: true
+    df_print: paged
+---
+
+[*Publication*](https://www.nature.com/articles/s41593-019-0539-4/)
+
+```{r libs, include=FALSE, message=FALSE}
+library(cacoa)
+library(dataorganizer)
+
+library(ggplot2)
+library(dplyr)
+library(cowplot)
+library(Matrix)
+library(dplyr)
+library(magrittr)
+library(readr)
+library(org.Hs.eg.db)
+
+theme_set(theme_bw())
+```
+
+```{r, message=FALSE, warning=FALSE}
+cao <- read_rds(DataPath("AZ/cao.rds")) %>% Cacoa$new()
+cao$plot.params <- list(size=0.1, alpha=0.1, font.size=c(2, 3))
+```
+
+## Dependency on metadata
+
+```{r, fig.width=8, fig.height=4}
+lapply(c("coda", "expression.shifts"), function(sp) {
+  cao$plotSampleDistances(space=sp, legend.position=c(1, 1))
+}) %>% 
+  plot_grid(plotlist=., ncol=2, labels=c("CoDA", "Expression"), hjust=0, label_x=0.02, label_y=0.99)
+```
+
+```{r, fig.width=5, fig.height=4}
+sample_meta <- cao$data.object$misc$sample_metadata
+lapply(c("coda", "expression.shifts"), function(sp) {
+  smd <- as.data.frame(sample_meta) %>% dplyr::select(-sample)
+  sep.res <- cao$estimateMetadataSeparation(smd, space=sp, dist="l1", name=paste0("md.", sp),
+                                            show.warning=FALSE)
+  (-log10(sep.res$padjust)) %>% {tibble(Type=names(.), value=.)} %>%
+    cacoa:::plotMeanMedValuesPerCellType(type="bar", yline=-log10(0.05), ylab="-log10(separation p-value)") +
+    scale_y_continuous(expand=c(0, 0, 0.05, 0)) +
+    scale_fill_manual(values=rep("#2b8cbe", length(sample_meta))) +
+    theme(axis.title.y=element_text(size=13))
+}) %>% 
+  plot_grid(plotlist=., ncol=2, labels=c("CoDA", "Expression"), hjust=0, label_x=0.22, label_y=0.98)
+```
+
+```{r, fig.width=8, fig.height=4}
+lapply(c('coda', 'expression'), function(sp) {
+  cao$plotSampleDistances(space=sp, legend.position=c(1, 1), sample.colors=sample_meta$batch, 
+                          color.title='batch')
+}) %>% plot_grid(plotlist=., ncol=2)
+```
+
+We may see strong grouping by batch. Moreover, each batch has data only from one condition.
+
+## Compositional differences
+
+### Cluster-based
+
+```{r}
+cao$plotCellLoadings()
+```
+
+```{r, fig.width=7, fig.height=3}
+cao$plotContrastTree()
+```
+
+### Cluster-free
+
+```{r, fig.width=5, fig.height=5}
+g0 <- cao$plotEmbedding(color.by='cell.groups')
+g0
+```
+
+KDE-based:
+
+```{r, fig.width=8, fig.height=4.5}
+cao$plotCellDensity(name='cell.density.kde') %>% plot_grid(plotlist=., ncol=2)
+```
+
+```{r, fig.width=8, fig.height=4}
+plot_grid(g0, cao$plotDiffCellDensity(name='cell.density.kde', legend.position=c(0, 1)), ncol=2)
+```
+
+Graph-based:
+
+```{r, fig.width=8, fig.height=4.5}
+cao$plotCellDensity(name='cell.density.graph') %>% plot_grid(plotlist=., ncol=2)
+```
+
+```{r, fig.width=8, fig.height=4}
+plot_grid(g0, cao$plotDiffCellDensity(name='cell.density.graph', legend.position=c(0, 1)), ncol=2)
+```
+
+## Expression differences
+
+### Cluster-based
+
+All genes:
+
+```{r, message=FALSE, warning=FALSE}
+cao$plotExpressionShiftMagnitudes()
+```
+
+Top DE genes:
+
+```{r}
+cao$estimateExpressionShiftMagnitudes(n.permutations=2500, top.n.genes=500, n.pcs=8, 
+                                      min.samp.per.type=4, name='es.top.de', verbose=FALSE)
+```
+
+```{r}
+cao$plotExpressionShiftMagnitudes(name='es.top.de')
+```
+
+### Cluster-free
+
+```{r, fig.width=8, fig.height=4}
+cao$plotClusterFreeExpressionShifts(legend.position=c(0, 1), font.size=c(1, 2))
+```
+
+```{r, message=FALSE, warning=FALSE}
+cao$estimateGenePrograms(method="leiden", z.adj=TRUE, smooth=FALSE)
+```
+
+```{r, fig.width=10, fig.height=7}
+cao$plotGeneProgramScores(
+  legend.position=c(0, 1), plot.na=FALSE, 
+  adj.list=theme(legend.key.width=unit(8, "pt"), legend.key.height=unit(12, "pt"))
+)
+```
