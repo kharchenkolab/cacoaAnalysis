@@ -8,9 +8,17 @@ editor_options:
   chunk_output_type: console
 ---
 
-Table of content:
+## Table of content
+
+### Figures
+
+### Supplementary notebooks
 
 - [Dataset pre-processing](./preprocess.html)
 - Simulations
     - ...
     - [Different normalization types](./simulation_distances.html)
+
+### Individual dataset reports
+
+- [Multiple Sclerosis](./ms_report.html)

@@ -1,0 +1,186 @@
+---
+title: 'Cacoa Report for the Multiple Sclerosis dataset'
+date: "`r Sys.Date()`"
+author: "[Viktor Petukhov](https://github.com/VPetukhov/)"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: '3'
+    toc_float: true
+    df_print: paged
+---
+
+```{r libs, message=FALSE}
+library(cacoa)
+library(dataorganizer)
+
+library(ggplot2)
+library(dplyr)
+library(cowplot)
+library(Matrix)
+library(dplyr)
+library(magrittr)
+library(readr)
+library(org.Hs.eg.db)
+
+theme_set(theme_bw())
+```
+
+```{r, message=FALSE, warning=FALSE}
+cao <- read_rds(DataPath("MS/cao.rds")) %>% Cacoa$new()
+cao$plot.params <- list(size=0.1, alpha=0.1, font.size=c(2, 3))
+```
+
+## Dependency on metadata
+
+```{r, fig.width=8, fig.height=4}
+lapply(c("coda", "expression.shifts"), function(sp) {
+  cao$plotSampleDistances(space=sp, legend.position=c(1, 1))
+}) %>% 
+  plot_grid(plotlist=., ncol=2, labels=c("CoDA", "Expression"), hjust=0, label_x=0.02, label_y=0.99)
+```
+
+```{r, fig.width=7, fig.height=4}
+sample_meta <- cao$data.object$misc$sample_metadata
+lapply(c("coda", "expression.shifts"), function(sp) {
+  smd <- as.data.frame(sample_meta) %>% dplyr::select(-sample, -diagnosis)
+  sep.res <- cao$estimateMetadataSeparation(smd, space=sp, dist="l1", name=paste0("md.", sp),
+                                            show.warning=FALSE)
+  (-log10(sep.res$padjust)) %>% {tibble(Type=names(.), value=.)} %>%
+    cacoa:::plotMeanMedValuesPerCellType(type="bar", yline=-log10(0.05), 
+                                         ylab="-log10(separation p-value)") +
+    scale_y_continuous(expand=c(0, 0, 0.05, 0)) +
+    scale_fill_manual(values=rep("#2b8cbe", length(sample_meta))) +
+    theme(axis.title.y=element_text(size=13))
+}) %>% 
+  plot_grid(plotlist=., ncol=2, labels=c("CoDA", "Expression"), hjust=0, label_x=0.2, label_y=0.98)
+```
+
+There is significant separation by Capbatch, Seqbatch and stage. Capbatch and Seqbatch are
+very similar, so we show only the former.
+
+```{r, fig.width=8, fig.height=8}
+lapply(c('coda', 'expression'), function(sp) {
+  lapply(c("Seqbatch", "stage"), function(n) {
+    cao$plotSampleDistances(space=sp, legend.position=c(0, 1), sample.colors=sample_meta[[n]])
+  }) %>% plot_grid(plotlist=., nrow=1)
+}) %>% plot_grid(plotlist=., ncol=1)
+```
+
+CoDA space (top row) has even stronger separation by batch than expression space.
+
+## Compositional differences
+
+### Cluster-based
+
+```{r}
+cao$plotCellLoadings()
+```
+
+```{r}
+cao$plotContrastTree()
+```
+
+We can see that most neuronal subtypes go to the left branch of the tree, while all glial 
+and immune types go to the right.
+
+### Cluster-free
+
+```{r, fig.width=5, fig.height=5}
+g0 <- cao$plotEmbedding(color.by='cell.groups')
+g0
+```
+
+KDE-based:
+
+```{r, fig.width=8, fig.height=4.5}
+cao$plotCellDensity(name='cell.density.kde') %>% plot_grid(plotlist=., ncol=2)
+```
+
+Differential cell density:
+
+```{r, fig.width=8, fig.height=4}
+plot_grid(g0, cao$plotDiffCellDensity(name='cell.density.kde', legend.position=c(0, 1)), ncol=2)
+```
+
+Graph-based:
+
+```{r, fig.width=8, fig.height=4.5}
+cao$plotCellDensity(name='cell.density.graph') %>% plot_grid(plotlist=., ncol=2)
+```
+
+Differential cell density:
+
+```{r, fig.width=8, fig.height=4}
+plot_grid(g0, cao$plotDiffCellDensity(name='cell.density.graph', legend.position=c(0, 1)), ncol=2)
+```
+
+Here, graph-based method shows higher sensitivity, and its results mostly match to the 
+cluster-based version. It also detects that in Astrocytes only one subtype is affected.
+
+## Expression differences
+
+### Cluster-based
+
+All genes:
+
+```{r}
+cao$plotExpressionShiftMagnitudes()
+```
+
+No significant changes detected.
+
+Top DE genes:
+
+```{r}
+cao$estimateExpressionShiftMagnitudes(n.permutations=5000, top.n.genes=500, n.pcs=8, 
+                                      min.samp.per.type=4, name='es.top.de', verbose=FALSE)
+```
+
+```{r}
+cao$plotExpressionShiftMagnitudes(name='es.top.de')
+```
+
+Number of DE genes:
+
+```{r, message=FALSE, warning=FALSE}
+cao$estimateDEPerCellType(
+  independent.filtering=TRUE, test='DESeq2.Wald', verbose=FALSE, resampling.method='fix.samples', 
+  fix.n.samples=6, n.cells.subsample=30, name='de.fix.samples', n.resamplings=50
+)
+```
+
+```{r, warning=FALSE, message=FALSE}
+cao$plotNumberOfDEGenes(
+  name="de.fix.samples", type="box", show.resampling.results=TRUE, jitter.alpha=0.5,
+  show.jitter=TRUE, y.offset=1
+) + scale_y_log10(labels=c(0, 10, 100), breaks=c(1, 11, 101), expand=c(0, 0), limits=c(1, 300))
+```
+
+### Cluster-free
+
+```{r, fig.width=8, fig.height=4}
+cao$plotClusterFreeExpressionShifts(legend.position=c(0, 1), font.size=c(1, 2))
+```
+
+## Functional interpretation
+
+```{r, fig.width=10, fig.height=12, warning=FALSE, message=FALSE}
+cao$plotVolcano(xlim=c(-3, 3), ylim=c(0, 3.5), lf.cutoff=1)
+```
+
+```{r, fig.width=8, fig.height=8}
+cao$plotOntologyHeatmapCollapsed(name="GSEA", genes="all", n=30, clust.method="ward.D")
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+cao$estimateGenePrograms(method="leiden", z.adj=TRUE, smooth=FALSE)
+```
+
+```{r, fig.width=12, fig.height=12}
+cao$plotGeneProgramScores(
+  legend.position=c(0, 1), plot.na=FALSE, 
+  adj.list=theme(legend.key.width=unit(8, "pt"), legend.key.height=unit(12, "pt"))
+)
+```
