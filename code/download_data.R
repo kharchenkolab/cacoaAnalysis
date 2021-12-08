@@ -44,6 +44,7 @@ downloadData <- function(datasets=NULL) {
       downloadFileToData(geoUrl('acc=GSE135893&file=GSE135893%5Fgenes%2Etsv%2Egz'), "PF/genes.tsv", gunzip=TRUE)
       downloadFileToData(geoUrl('acc=GSE135893&file=GSE135893%5Fmatrix%2Emtx%2Egz'), "PF/matrix.mtx", gunzip=TRUE)
       downloadFileToData(geoUrl('acc=GSE135893&file=GSE135893%5FIPF%5Fmetadata%2Ecsv%2Egz'), "PF/cell_metadata.csv", gunzip=TRUE)
+      downloadFileToData('https://www.science.org/doi/suppl/10.1126/sciadv.aba1972/suppl_file/aba1972_table_s2.csv', "PF/sample_metadata.csv")
     } else if (ds == "SCC") {
       downloadFileToData(geoUrl('acc=GSE144236&file=GSE144236%5FcSCC%5Fcounts%2Etxt%2Egz'), "SCC/counts.txt", gunzip=TRUE)
       downloadFileToData(geoUrl('acc=GSE144236&file=GSE144236%5Fpatient%5Fmetadata%5Fnew%2Etxt%2Egz'), "SCC/cell_metadata.txt", gunzip=TRUE)

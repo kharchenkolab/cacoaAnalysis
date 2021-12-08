@@ -15,6 +15,7 @@ MS notebook on mendel:/d0/home/pkharchenko/p2/comp/MS/examplle.Rmd
 ## Downloading
 
 To download all data automatically, run `Rscript code/download_data.R` from the project root.
+The descriptions below are for downloading by hand and navigating data repositories.
 
 ### Alzheimer
 
