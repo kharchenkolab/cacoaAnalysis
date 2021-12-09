@@ -1,0 +1,66 @@
+---
+title: 'Preprocess the MS dataset'
+date: "`r Sys.Date()`"
+author: "[Viktor Petukhov](https://github.com/VPetukhov/)"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: '3'
+    toc_float: true
+    df_print: paged
+---
+
+## Libraries
+
+```{r libs, message=FALSE}
+library(tidyverse)
+library(magrittr)
+library(dataorganizer)
+library(conos)
+library(cacoa)
+library(Matrix)
+
+devtools::load_all()
+
+N_CORES <- 45
+FORCE <- TRUE
+DATASETS <- c("ASD", "AZ", "EP", "MS", "PF", "SCC")
+
+verb1 <- TRUE
+verb2 <- TRUE
+```
+
+## Run and save Cacoa
+
+```{r, message=FALSE, warning=FALSE}
+for (d.name in DATASETS) {
+  message(d.name)
+  d.path <- DataPath(d.name, 'cao.rds')
+  if (!FORCE && file.exists(d.path)) {
+    message("Continue")
+    next
+  }
+  cao <- initializeCacoa(d.name, n.cores=N_CORES)
+  cao$estimateExpressionShiftMagnitudes(n.permutations=5000, verbose=verb2, min.samp.per.type=3)
+  cao$estimateExpressionShiftMagnitudes(n.permutations=2500, top.n.genes=500, n.pcs=8, 
+                                        min.samp.per.type=4, name='es.top.de', verbose=verb2)
+  cao$estimateCellLoadings()
+
+  for (met in c('kde', 'graph')) {
+    cn <- paste0('cell.density.', met)
+    cao$estimateCellDensity(method=met, estimate.variation=FALSE, verbose=verb2, name=cn, beta=10)
+    cao$estimateDiffCellDensity(type='wilcox', adjust.pvalues=TRUE, verbose=verb2, n.permutations=500, name=cn)
+    cao$estimateDiffCellDensity(type='subtract', adjust.pvalues=FALSE, verbose=verb2, name=cn)
+  }
+
+  cao$estimateClusterFreeExpressionShifts(n.top.genes=3000, gene.selection="expression", verbose=verb1)
+
+  cao$estimateClusterFreeDE(n.top.genes=1500, min.expr.frac=0.01, adjust.pvalues=TRUE, smooth=TRUE, verbose=verb1)
+  cao$smoothClusterFreeZScores(progress.chunks=10, z.adj=TRUE, verbose=verb1)
+  cao$estimateDEPerCellType(independent.filtering=TRUE, test='DESeq2.Wald', verbose=verb1)
+
+  cao$estimateOntology(type="GSEA", org.db=org.Hs.eg.db::org.Hs.eg.db, verbose=verb1, n.cores=1)
+  write_rds(cao, d.path)
+  message(d.name, " done!")
+}
+```
