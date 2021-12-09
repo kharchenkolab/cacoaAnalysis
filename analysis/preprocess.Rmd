@@ -25,7 +25,7 @@ library(reticulate)
 devtools::load_all()
 
 N_CORES <- 45
-FORCE <- TRUE
+FORCE <- FALSE
 ```
 
 ```{r, message=FALSE}
@@ -176,13 +176,13 @@ The paper already performed the filtration
 
 ```{r, fig.width=5, fig.height=5}
 con <- readOrCreate(DataPath('PF/con.rds'), function() {
-  cell.metadata <- read_csv(DataPath("PF/cell_metadata.csv")) %>% rename(cell=X1) %>%
-    filter(Diagnosis %in% c("Control", "IPF")) %>%
-    rename(sample=Sample_Name, cellType=celltype)
+  cell.metadata <- read_csv(DataPath("PF/cell_metadata.csv")) %>% 
+    dplyr::rename(cell=X1) %>% dplyr::filter(Diagnosis %in% c("Control", "IPF")) %>%
+    dplyr::rename(sample=Sample_Name, cellType=celltype)
 
   sample.metadata <- cell.metadata %>%
     group_by(sample, Sample_Source, Diagnosis, Status, orig.ident) %>%
-    summarise(n=n()) %>% select(-n) %>%
+    summarise(n=n()) %>% dplyr::select(-n) %>%
     lapply(setNames, .$sample)
 
   mat <- DataPath("PF") %>% Seurat::Read10X(gene.column=1) %>%
@@ -218,9 +218,10 @@ con <- readOrCreate(DataPath('SCC/con.rds'), function() {
 
   mat <- mat[rowSums(mat > 0) >= 10, cell.metadata$cell]
   mat.per.samp <- splitMatrixByFactor(mat, cell.metadata$sample)
+  mat.per.samp %<>% .[sapply(., ncol) > 500]
 
   p2s <- plapply(mat.per.samp, createPagoda, min.transcripts.per.cell=800,
-                mc.preschedule=TRUE, n.cores=N_CORES, progress=FALSE)
+                 mc.preschedule=TRUE, n.cores=N_CORES, progress=FALSE)
 
   createConos(p2s, sample.meta=NULL, cell.meta=cell.metadata, n.cores=N_CORES)
 }, force=FORCE) %>% Conos$new()
