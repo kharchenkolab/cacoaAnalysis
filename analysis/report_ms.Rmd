@@ -1,5 +1,5 @@
 ---
-title: 'Cacoa Report for the Multiple Sclerosis dataset'
+title: 'Multiple Sclerosis Dataset Report'
 date: "`r Sys.Date()`"
 author: "[Viktor Petukhov](https://github.com/VPetukhov/)"
 output:
@@ -9,6 +9,8 @@ output:
     toc_float: true
     df_print: paged
 ---
+
+[*Publication*](https://www.nature.com/articles/s41586-019-1404-z)
 
 ```{r libs, message=FALSE}
 library(cacoa)
@@ -131,11 +133,6 @@ cao$plotExpressionShiftMagnitudes()
 No significant changes detected.
 
 Top DE genes:
-
-```{r}
-cao$estimateExpressionShiftMagnitudes(n.permutations=5000, top.n.genes=500, n.pcs=8, 
-                                      min.samp.per.type=4, name='es.top.de', verbose=FALSE)
-```
 
 ```{r}
 cao$plotExpressionShiftMagnitudes(name='es.top.de')

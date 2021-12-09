@@ -118,11 +118,6 @@ cao$plotExpressionShiftMagnitudes()
 Top DE genes:
 
 ```{r}
-cao$estimateExpressionShiftMagnitudes(n.permutations=2500, top.n.genes=500, n.pcs=8, 
-                                      min.samp.per.type=4, name='es.top.de', verbose=FALSE)
-```
-
-```{r}
 cao$plotExpressionShiftMagnitudes(name='es.top.de')
 ```
 
@@ -130,6 +125,18 @@ cao$plotExpressionShiftMagnitudes(name='es.top.de')
 
 ```{r, fig.width=8, fig.height=4}
 cao$plotClusterFreeExpressionShifts(legend.position=c(0, 1), font.size=c(1, 2))
+```
+
+## Functional interpretation
+
+```{r, fig.width=10, fig.height=6, warning=FALSE, message=FALSE}
+cao$plotVolcano(xlim=c(-3.5, 3.5), ylim=c(0, 3.5), lf.cutoff=1)
+```
+
+```{r, fig.width=8, fig.height=5}
+ex_words <- c('regulation', 'process', 'cell')
+cao$plotOntologyHeatmapCollapsed(name="GSEA", genes="all", n=20, clust.method="ward.D",
+                                 exclude.words=ex_words)
 ```
 
 ```{r, message=FALSE, warning=FALSE}

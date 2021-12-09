@@ -12,12 +12,15 @@ editor_options:
 
 ### Figures
 
-### Supplementary notebooks
+### Preprocessing
 
-- [Dataset pre-processing](./preprocess.html)
-- Simulations
-    - ...
-    - [Different normalization types](./simulation_distances.html)
+- [Dataset preprocessing](./preprocess.html)
+- [Cacoa preprocessing](./prepare_cacoa_results.html)
+
+### Simulations
+
+- ...
+- [Different normalization types](./simulation_distances.html)
 
 ### Individual dataset reports
 
@@ -25,3 +28,5 @@ editor_options:
 - [Autism](./report_asd.html)
 - [Epilepsy](./report_ep.html)
 - [Multiple Sclerosis](./report_ms.html)
+- [Pulmonary Fibrosis](./report_pf.html)
+- [Squamous Cell Carcinoma](./report_scc.html)

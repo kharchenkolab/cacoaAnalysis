@@ -1,5 +1,5 @@
 ---
-title: 'Epilepsy Dataset Report'
+title: 'Pulmonary Fibrosis Dataset Report'
 date: "`r Sys.Date()`"
 author: "[Viktor Petukhov](https://github.com/VPetukhov/)"
 output:
@@ -10,7 +10,7 @@ output:
     df_print: paged
 ---
 
-[*Publication*](https://www.nature.com/articles/s41467-020-18752-7)
+[*Publication*](https://www.science.org/doi/10.1126/sciadv.aba1972)
 
 ```{r libs, include=FALSE, message=FALSE}
 library(cacoa)
@@ -29,26 +29,35 @@ theme_set(theme_bw())
 ```
 
 ```{r, message=FALSE, warning=FALSE}
-cao <- read_rds(DataPath("EP/cao.rds")) %>% Cacoa$new()
+cao <- read_rds(DataPath("PF/cao.rds")) %>% Cacoa$new()
 cao$sample.groups.palette %<>% .[c(2, 1)]
 cao$plot.params <- list(size=0.1, alpha=0.1, font.size=c(2, 3))
+
+sample_meta <- read_csv(DataPath("PF/sample_metadata.csv")) %>% head(-2) %>% 
+  .[,2:10] %>% unique() %>% mutate(
+    Gender=replace(Gender, Gender == "Unknown", NA),
+    Ethnicity=replace(Ethnicity, Ethnicity == "Unknown", NA),
+    Tobacco=replace(Tobacco, Tobacco == "Unknown", NA),
+    Age=as.integer(Age),
+    Ethnicity=sapply(strsplit(Ethnicity, " "), `[[`, 1)
+  ) %>% arrange(Sample_Name) %>% head(-1) %>% 
+  as.data.frame() %>% set_rownames(.$Sample_Name) %>% .[names(cao$data.object$samples),]
 ```
 
 ## Dependency on metadata
 
 ```{r, fig.width=8, fig.height=4}
 lapply(c("coda", "expression.shifts"), function(sp) {
-  cao$plotSampleDistances(space=sp, legend.position=c(0, 0))
+  cao$plotSampleDistances(space=sp, legend.position=c(1, 1))
 }) %>% 
   plot_grid(plotlist=., ncol=2, labels=c("CoDA", "Expression"), hjust=0, label_x=0.02, label_y=0.99)
 ```
 
-```{r, fig.width=5, fig.height=3.5}
-sample_meta <- cao$data.object$misc$sample_metadata
+```{r, fig.width=7, fig.height=4}
 lapply(c("coda", "expression.shifts"), function(sp) {
-  smd <- as.data.frame(sample_meta) %>% dplyr::select(-Name, -Alias)
+  smd <- as.data.frame(sample_meta) %>% dplyr::select(-Sample_Name, , -Diagnosis)
   sep.res <- cao$estimateMetadataSeparation(smd, space=sp, dist="l1", name=paste0("md.", sp),
-                                            show.warning=FALSE, n.permutations=50000)
+                                            show.warning=FALSE)
   (-log10(sep.res$padjust)) %>% {tibble(Type=names(.), value=.)} %>%
     cacoa:::plotMeanMedValuesPerCellType(type="bar", yline=-log10(0.05), ylab="-log10(separation p-value)") +
     scale_y_continuous(expand=c(0, 0, 0.05, 0)) +
@@ -58,7 +67,12 @@ lapply(c("coda", "expression.shifts"), function(sp) {
   plot_grid(plotlist=., ncol=2, labels=c("CoDA", "Expression"), hjust=0, label_x=0.2, label_y=0.98)
 ```
 
-No significant separation by the provided metadata
+```{r}
+cao$test.results$md.expression.shifts$padjust %>% {names(.)[. < 0.05]} %>% lapply(function(n) {
+  cao$plotSampleDistances(space='expression', legend.position=c(0, 1), sample.colors=sample_meta[[n]], 
+                          color.title=n)
+})
+```
 
 ## Compositional differences
 
@@ -123,17 +137,17 @@ cao$plotClusterFreeExpressionShifts(legend.position=c(0, 1), font.size=c(1, 2))
 
 ## Functional interpretation
 
-```{r, fig.width=10, fig.height=16, warning=FALSE, message=FALSE}
-cao$plotVolcano(xlim=c(-3.5, 3.5), ylim=c(0, 3.5), lf.cutoff=1)
+```{r, fig.width=10, fig.height=15, warning=FALSE, message=FALSE}
+cao$plotVolcano(xlim=c(-3, 3), ylim=c(0, 3.5), lf.cutoff=1)
 ```
 
-```{r, fig.width=11, fig.height=12}
+```{r, fig.width=10, fig.height=14}
 ex_words <- c('regulation', 'process', 'cell')
-cao$plotOntologyHeatmapCollapsed(name="GSEA", genes="all", n=50, clust.method="ward.D",
+cao$plotOntologyHeatmapCollapsed(name="GSEA", genes="all", n=50, clust.method="ward.D", 
                                  exclude.words=ex_words)
 ```
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 cao$estimateGenePrograms(method="leiden", z.adj=TRUE, smooth=FALSE)
 ```
 
