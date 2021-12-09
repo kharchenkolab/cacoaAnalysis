@@ -11,7 +11,7 @@
 
 <meta name="author" content="Viktor Petukhov" />
 
-<meta name="date" content="2021-11-30" />
+<meta name="date" content="2021-12-09" />
 
 <title>Preprocess the MS dataset</title>
 
@@ -349,7 +349,7 @@ div.tocify {
 
 <h1 class="title toc-ignore">Preprocess the MS dataset</h1>
 <h4 class="author"><a href="https://github.com/VPetukhov/">Viktor Petukhov</a></h4>
-<h4 class="date">2021-11-30</h4>
+<h4 class="date">2021-12-09</h4>
 
 </div>
 
@@ -374,7 +374,7 @@ div.tocify {
 <div class="tab-content">
 <div id="summary" class="tab-pane fade in active">
 <p>
-<strong>Last updated:</strong> 2021-11-30
+<strong>Last updated:</strong> 2021-12-09
 </p>
 <p>
 <strong>Checks:</strong> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> 7 <span class="glyphicon glyphicon-exclamation-sign text-danger" aria-hidden="true"></span> 0
@@ -465,16 +465,16 @@ This reproducible <a href="http://rmarkdown.rstudio.com">R Markdown</a> analysis
 <div class="panel panel-default">
 <div class="panel-heading">
 <p class="panel-title">
-<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongRepositoryversionstrong3f1371c"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Repository version:</strong> 3f1371c </a>
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongRepositoryversionstrongahrefhttpsgithubcomkharchenkolabcacoaAnalysistreeb3ebfb39963c4864cefdd683657c0de6147c53c9targetblankb3ebfb3a"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Repository version:</strong> <a href="https://github.com/kharchenkolab/cacoaAnalysis/tree/b3ebfb39963c4864cefdd683657c0de6147c53c9" target="_blank">b3ebfb3</a> </a>
 </p>
 </div>
-<div id="strongRepositoryversionstrong3f1371c" class="panel-collapse collapse">
+<div id="strongRepositoryversionstrongahrefhttpsgithubcomkharchenkolabcacoaAnalysistreeb3ebfb39963c4864cefdd683657c0de6147c53c9targetblankb3ebfb3a" class="panel-collapse collapse">
 <div class="panel-body">
 <p>
 Great! You are using Git for version control. Tracking code development and connecting the code version to the results is critical for reproducibility.
 </p>
 <p>
-The results in this page were generated with repository version 3f1371c. See the <em>Past versions</em> tab to see a history of the changes made to the R Markdown and HTML files.
+The results in this page were generated with repository version <a href="https://github.com/kharchenkolab/cacoaAnalysis/tree/b3ebfb39963c4864cefdd683657c0de6147c53c9" target="_blank">b3ebfb3</a>. See the <em>Past versions</em> tab to see a history of the changes made to the R Markdown and HTML files.
 </p>
 <p>
 Note that you need to be careful to ensure that all relevant files for the analysis have been committed to Git prior to generating the results (you can use <code>wflow_publish</code> or <code>wflow_git_commit</code>). workflowr only checks the R Markdown file, but you know if there are other scripts or data files that it depends on. Below is the status of the Git repository when the results were generated:
@@ -485,9 +485,19 @@ Ignored files:
     Ignored:    .Rproj.user/
     Ignored:    analysis/.Rhistory
     Ignored:    analysis/de_figure_ep.nb.html
-    Ignored:    analysis/figure/
+    Ignored:    analysis/prepare_cacoa_results.nb.html
     Ignored:    analysis/preprocess.nb.html
-    Ignored:    analysis/site_libs/
+    Ignored:    analysis/report_asd.nb.html
+    Ignored:    analysis/report_az.nb.html
+    Ignored:    analysis/report_ep.nb.html
+    Ignored:    analysis/report_ms.nb.html
+    Ignored:    analysis/report_pf.nb.html
+    Ignored:    analysis/report_scc.nb.html
+    Ignored:    analysis/report_template.nb.html
+    Ignored:    analysis/simulation_distances.nb.html
+    Ignored:    analysis/simulation_note.nb.html
+    Ignored:    analysis/simulation_variance.nb.html
+    Ignored:    cache/
     Ignored:    data/ASD/
     Ignored:    data/AZ/
     Ignored:    data/EP/
@@ -500,7 +510,16 @@ Untracked files:
     Untracked:  analysis/cluster_free_de_pf.Rmd
     Untracked:  analysis/de_figure_ep.Rmd
     Untracked:  analysis/fig_cluster_free_de.Rmd
-    Untracked:  cache/
+    Untracked:  analysis/prepare_cacoa_results.Rmd
+    Untracked:  analysis/report_pf.Rmd
+    Untracked:  analysis/report_scc.Rmd
+    Untracked:  analysis/report_template.Rmd
+    Untracked:  analysis/simulation_note.Rmd
+
+Unstaged changes:
+    Modified:   analysis/report_asd.Rmd
+    Modified:   analysis/report_ep.Rmd
+    Modified:   analysis/report_ms.Rmd
 
 </code></pre>
 <p>
@@ -544,7 +563,41 @@ Message
 Rmd
 </td>
 <td>
-3f1371c
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/b3ebfb39963c4864cefdd683657c0de6147c53c9/analysis/preprocess.Rmd" target="_blank">b3ebfb3</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-09
+</td>
+<td>
+Filtration of samples in SCC preprocessing
+</td>
+</tr>
+<tr>
+<td>
+html
+</td>
+<td>
+<a href="https://rawcdn.githack.com/kharchenkolab/cacoaAnalysis/58bdad8f5bc1d39baf2df8cf961f2fe5fdff39a1/docs/preprocess.html" target="_blank">58bdad8</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-01
+</td>
+<td>
+Updated the preprocessing notebook
+</td>
+</tr>
+<tr>
+<td>
+Rmd
+</td>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/3f1371c941482c36bf9d32b433d7cd4451ec3081/analysis/preprocess.Rmd" target="_blank">3f1371c</a>
 </td>
 <td>
 viktor_petukhov
@@ -561,7 +614,7 @@ Cleaner preprocessing
 Rmd
 </td>
 <td>
-1d802ad
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/1d802ad56fc494ad83e936fd82e0c04f571d7646/analysis/preprocess.Rmd" target="_blank">1d802ad</a>
 </td>
 <td>
 viktor_petukhov
@@ -578,7 +631,7 @@ Force rebuild in preprocess.Rmd
 Rmd
 </td>
 <td>
-2212721
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/221272174ec9c102d3dcf362f883ffcd96f023a8/analysis/preprocess.Rmd" target="_blank">2212721</a>
 </td>
 <td>
 viktor_petukhov
@@ -595,7 +648,7 @@ Small fix in SCC preprocessing
 html
 </td>
 <td>
-3085bf5
+<a href="https://rawcdn.githack.com/kharchenkolab/cacoaAnalysis/3085bf54f5a6743763615e274a365caf8ff832a3/docs/preprocess.html" target="_blank">3085bf5</a>
 </td>
 <td>
 viktor_petukhov
@@ -612,7 +665,7 @@ Build preprocessing.html
 Rmd
 </td>
 <td>
-70d2759
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/70d27590a95f6d2abcc73735f8579ed5f16ff5aa/analysis/preprocess.Rmd" target="_blank">70d2759</a>
 </td>
 <td>
 viktor_petukhov
@@ -645,7 +698,7 @@ library(reticulate)
 devtools::load_all()
 
 N_CORES &lt;- 45
-FORCE &lt;- TRUE</code></pre>
+FORCE &lt;- FALSE</code></pre>
 <pre class="r"><code>virtualenv_create(&quot;r-scrublet&quot;)</code></pre>
 <pre><code>virtualenv: r-scrublet</code></pre>
 <pre class="r"><code>virtualenv_install(&quot;r-scrublet&quot;, c(&quot;scrublet&quot;, &quot;matplotlib&quot;))</code></pre>
@@ -691,9 +744,9 @@ estimateDoubletInfo &lt;- function(mats, progress=FALSE) {
                  dub.threshold=0.3, mc.preschedule=TRUE, n.cores=N_CORES, progress=FALSE)
 
   createConos(p2s, sample.meta=sample.metadata, cell.meta=cell.metadata, n.cores=N_CORES)
-}, force=FORCE) %&gt;% Conos$new()</code></pre>
-<pre><code>.</code></pre>
-<pre class="r"><code>con$plotGraph(groups=con$misc$cell_metadata$cellType, size=0.2, alpha=0.2)</code></pre>
+}, force=FORCE) %&gt;% Conos$new()
+
+con$plotGraph(groups=con$misc$cell_metadata$cellType, size=0.2, alpha=0.2)</code></pre>
 <p><img src="figure/preprocess.Rmd/unnamed-chunk-2-1.png" width="480" style="display: block; margin: auto;" /></p>
 <p>
 <button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-unnamed-chunk-2-1">
@@ -719,7 +772,18 @@ Date
 <tbody>
 <tr>
 <td>
-3085bf5
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/58bdad8f5bc1d39baf2df8cf961f2fe5fdff39a1/docs/figure/preprocess.Rmd/unnamed-chunk-2-1.png" target="_blank">58bdad8</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-01
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/3085bf54f5a6743763615e274a365caf8ff832a3/docs/figure/preprocess.Rmd/unnamed-chunk-2-1.png" target="_blank">3085bf5</a>
 </td>
 <td>
 viktor_petukhov
@@ -733,9 +797,9 @@ viktor_petukhov
 </div>
 </div>
 <pre class="r"><code>rm(con); gc();</code></pre>
-<pre><code>           used  (Mb) gc trigger   (Mb)  max used   (Mb)
-Ncells  4464430 238.5    8419650  449.7   8419650  449.7
-Vcells 16905049 129.0  274219120 2092.2 535584051 4086.2</code></pre>
+<pre><code>          used  (Mb) gc trigger   (Mb)  max used   (Mb)
+Ncells 4392598 234.6    8418368  449.6   8418368  449.6
+Vcells 8814994  67.3  744389120 5679.3 906841008 6918.7</code></pre>
 </div>
 <div id="autism" class="section level2">
 <h2>Autism</h2>
@@ -761,9 +825,9 @@ Vcells 16905049 129.0  274219120 2092.2 535584051 4086.2</code></pre>
   p2s &lt;- plapply(mat.per.samp, createPagoda, dub.scores=dub.info$scores, dub.threshold=0.17,
                  mc.preschedule=TRUE, n.cores=N_CORES, progress=FALSE)
   createConos(p2s, sample.meta=sample.metadata, cell.meta=cell.metadata, n.cores=N_CORES)
-}, force=FORCE) %&gt;% Conos$new()</code></pre>
-<pre><code>.</code></pre>
-<pre class="r"><code>con$plotGraph(groups=con$misc$cell_metadata$cellType, size=0.1, alpha=0.1)</code></pre>
+}, force=FORCE) %&gt;% Conos$new()
+
+con$plotGraph(groups=con$misc$cell_metadata$cellType, size=0.1, alpha=0.1)</code></pre>
 <p><img src="figure/preprocess.Rmd/unnamed-chunk-4-1.png" width="480" style="display: block; margin: auto;" /></p>
 <p>
 <button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-unnamed-chunk-4-1">
@@ -789,7 +853,18 @@ Date
 <tbody>
 <tr>
 <td>
-3085bf5
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/58bdad8f5bc1d39baf2df8cf961f2fe5fdff39a1/docs/figure/preprocess.Rmd/unnamed-chunk-4-1.png" target="_blank">58bdad8</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-01
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/3085bf54f5a6743763615e274a365caf8ff832a3/docs/figure/preprocess.Rmd/unnamed-chunk-4-1.png" target="_blank">3085bf5</a>
 </td>
 <td>
 viktor_petukhov
@@ -803,9 +878,9 @@ viktor_petukhov
 </div>
 </div>
 <pre class="r"><code>rm(con); gc();</code></pre>
-<pre><code>           used  (Mb) gc trigger    (Mb)   max used    (Mb)
-Ncells  5089547 271.9   15090983   806.0   32790919  1751.3
-Vcells 93770050 715.5 3360870642 25641.5 3138941721 23948.3</code></pre>
+<pre><code>          used  (Mb) gc trigger   (Mb)  max used   (Mb)
+Ncells 4392731 234.6    8418368  449.6   8418368  449.6
+Vcells 8815553  67.3  716309282 5465.1 906841008 6918.7</code></pre>
 </div>
 <div id="epilepsy" class="section level2">
 <h2>Epilepsy</h2>
@@ -817,9 +892,9 @@ Vcells 93770050 715.5 3360870642 25641.5 3138941721 23948.3</code></pre>
 
   con.pap$samples %&gt;% lapply(pagoda2::Pagoda2$new) %&gt;%
     createConos(sample.meta=sample.metadata, cell.meta=cell.metadata, k=40, n.cores=N_CORES)
-}, force=FORCE) %&gt;% Conos$new()</code></pre>
-<pre><code>.</code></pre>
-<pre class="r"><code>con$plotGraph(groups=con$misc$cell_metadata$cellType, size=0.1, alpha=0.1, font.size=c(2, 3))</code></pre>
+}, force=FORCE) %&gt;% Conos$new()
+
+con$plotGraph(groups=con$misc$cell_metadata$cellType, size=0.1, alpha=0.1, font.size=c(2, 3))</code></pre>
 <p><img src="figure/preprocess.Rmd/unnamed-chunk-6-1.png" width="480" style="display: block; margin: auto;" /></p>
 <p>
 <button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-unnamed-chunk-6-1">
@@ -845,7 +920,18 @@ Date
 <tbody>
 <tr>
 <td>
-3085bf5
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/58bdad8f5bc1d39baf2df8cf961f2fe5fdff39a1/docs/figure/preprocess.Rmd/unnamed-chunk-6-1.png" target="_blank">58bdad8</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-01
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/3085bf54f5a6743763615e274a365caf8ff832a3/docs/figure/preprocess.Rmd/unnamed-chunk-6-1.png" target="_blank">3085bf5</a>
 </td>
 <td>
 viktor_petukhov
@@ -859,9 +945,9 @@ viktor_petukhov
 </div>
 </div>
 <pre class="r"><code>rm(con); gc();</code></pre>
-<pre><code>           used  (Mb) gc trigger    (Mb)   max used    (Mb)
-Ncells  5127848 273.9   15194756   811.5   36745925  1962.5
-Vcells 88913614 678.4 2150957212 16410.6 3138941721 23948.3</code></pre>
+<pre><code>          used  (Mb) gc trigger   (Mb)  max used   (Mb)
+Ncells 4393292 234.7    8418368  449.6   8418368  449.6
+Vcells 8920047  68.1  696311263 5312.5 906841008 6918.7</code></pre>
 </div>
 <div id="ms" class="section level2">
 <h2>MS</h2>
@@ -883,9 +969,9 @@ Vcells 88913614 678.4 2150957212 16410.6 3138941721 23948.3</code></pre>
                  dub.threshold=0.2, mc.preschedule=TRUE, n.cores=N_CORES, progress=FALSE)
 
   createConos(p2s, sample.meta=sample.metadata, cell.meta=cell.metadata, n.cores=N_CORES)
-}, force=FORCE) %&gt;% Conos$new()</code></pre>
-<pre><code>.</code></pre>
-<pre class="r"><code>con$plotGraph(groups=con$misc$cell_metadata$cellType, size=0.1, alpha=0.1)</code></pre>
+}, force=FORCE) %&gt;% Conos$new()
+
+con$plotGraph(groups=con$misc$cell_metadata$cellType, size=0.1, alpha=0.1)</code></pre>
 <p><img src="figure/preprocess.Rmd/unnamed-chunk-8-1.png" width="480" style="display: block; margin: auto;" /></p>
 <p>
 <button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-unnamed-chunk-8-1">
@@ -911,7 +997,18 @@ Date
 <tbody>
 <tr>
 <td>
-3085bf5
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/58bdad8f5bc1d39baf2df8cf961f2fe5fdff39a1/docs/figure/preprocess.Rmd/unnamed-chunk-8-1.png" target="_blank">58bdad8</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-01
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/3085bf54f5a6743763615e274a365caf8ff832a3/docs/figure/preprocess.Rmd/unnamed-chunk-8-1.png" target="_blank">3085bf5</a>
 </td>
 <td>
 viktor_petukhov
@@ -925,21 +1022,21 @@ viktor_petukhov
 </div>
 </div>
 <pre class="r"><code>rm(con); gc();</code></pre>
-<pre><code>           used  (Mb) gc trigger    (Mb)   max used    (Mb)
-Ncells  5078468 271.3   15194756   811.5   36745925  1962.5
-Vcells 47645373 363.6 1720765770 13128.5 3138941721 23948.3</code></pre>
+<pre><code>          used  (Mb) gc trigger   (Mb)  max used   (Mb)
+Ncells 4341247 231.9    8418368  449.6   8418368  449.6
+Vcells 8113629  62.0  557049011 4250.0 906841008 6918.7</code></pre>
 </div>
 <div id="pf" class="section level2">
 <h2>PF</h2>
 <p>The paper already performed the filtration</p>
 <pre class="r"><code>con &lt;- readOrCreate(DataPath(&#39;PF/con.rds&#39;), function() {
-  cell.metadata &lt;- read_csv(DataPath(&quot;PF/cell_metadata.csv&quot;)) %&gt;% rename(cell=X1) %&gt;%
-    filter(Diagnosis %in% c(&quot;Control&quot;, &quot;IPF&quot;)) %&gt;%
-    rename(sample=Sample_Name, cellType=celltype)
+  cell.metadata &lt;- read_csv(DataPath(&quot;PF/cell_metadata.csv&quot;)) %&gt;% 
+    dplyr::rename(cell=X1) %&gt;% dplyr::filter(Diagnosis %in% c(&quot;Control&quot;, &quot;IPF&quot;)) %&gt;%
+    dplyr::rename(sample=Sample_Name, cellType=celltype)
 
   sample.metadata &lt;- cell.metadata %&gt;%
     group_by(sample, Sample_Source, Diagnosis, Status, orig.ident) %&gt;%
-    summarise(n=n()) %&gt;% select(-n) %&gt;%
+    summarise(n=n()) %&gt;% dplyr::select(-n) %&gt;%
     lapply(setNames, .$sample)
 
   mat &lt;- DataPath(&quot;PF&quot;) %&gt;% Seurat::Read10X(gene.column=1) %&gt;%
@@ -949,39 +1046,9 @@ Vcells 47645373 363.6 1720765770 13128.5 3138941721 23948.3</code></pre>
   mat.per.samp &lt;- splitMatrixByFactor(mat, cell.metadata$sample)
   p2s &lt;- plapply(mat.per.samp, createPagoda, mc.preschedule=TRUE, n.cores=N_CORES, progress=FALSE)
   createConos(p2s, sample.meta=sample.metadata, cell.meta=cell.metadata, n.cores=N_CORES)
-}, force=FORCE) %&gt;% Conos$new()</code></pre>
-<pre><code>Warning: Missing column names filled in: &#39;X1&#39; [1]</code></pre>
-<pre><code>
--- Column specification --------------------------------------------------------
-cols(
-  X1 = col_character(),
-  orig.ident = col_character(),
-  nCount_RNA = col_double(),
-  nFeature_RNA = col_double(),
-  Diagnosis = col_character(),
-  Sample_Name = col_character(),
-  Sample_Source = col_character(),
-  Status = col_character(),
-  percent.mt = col_double(),
-  nCount_SCT = col_double(),
-  nFeature_SCT = col_double(),
-  seurat_clusters = col_double(),
-  population = col_character(),
-  celltype = col_character()
-)</code></pre>
-<pre><code>`summarise()` has grouped output by &#39;sample&#39;, &#39;Sample_Source&#39;, &#39;Diagnosis&#39;, &#39;Status&#39;. You can override using the `.groups` argument.</code></pre>
-<pre><code>found 0 out of 231 cached PCA space pairs ... </code></pre>
-<pre><code>running 231 additional PCA space pairs </code></pre>
-<pre><code> done</code></pre>
-<pre><code>inter-sample links using mNN </code></pre>
-<pre><code> done</code></pre>
-<pre><code>local pairs </code></pre>
-<pre><code> done</code></pre>
-<pre><code>building graph .</code></pre>
-<pre><code>.</code></pre>
-<pre><code>done</code></pre>
-<pre><code>Warning in embedKnnGraph(commute.times, n.neighbors = n.neighbors, names = adj.info$names, : Maximal number of estimated neighbors is 27. Consider increasing min.visited.verts, min.prob or min.prob.lower.</code></pre>
-<pre class="r"><code>con$plotGraph(groups=con$misc$cell_metadata$cellType, size=0.1, alpha=0.1)</code></pre>
+}, force=FORCE) %&gt;% Conos$new()
+
+con$plotGraph(groups=con$misc$cell_metadata$cellType, size=0.1, alpha=0.1)</code></pre>
 <p><img src="figure/preprocess.Rmd/unnamed-chunk-10-1.png" width="480" style="display: block; margin: auto;" /></p>
 <p>
 <button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-unnamed-chunk-10-1">
@@ -1007,7 +1074,18 @@ Date
 <tbody>
 <tr>
 <td>
-3085bf5
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/58bdad8f5bc1d39baf2df8cf961f2fe5fdff39a1/docs/figure/preprocess.Rmd/unnamed-chunk-10-1.png" target="_blank">58bdad8</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-01
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/3085bf54f5a6743763615e274a365caf8ff832a3/docs/figure/preprocess.Rmd/unnamed-chunk-10-1.png" target="_blank">3085bf5</a>
 </td>
 <td>
 viktor_petukhov
@@ -1021,9 +1099,9 @@ viktor_petukhov
 </div>
 </div>
 <pre class="r"><code>rm(con); gc();</code></pre>
-<pre><code>           used  (Mb) gc trigger    (Mb)   max used    (Mb)
-Ncells  5126196 273.8   15194756   811.5   36745925  1962.5
-Vcells 52427576 400.0 1903262240 14520.8 3138941721 23948.3</code></pre>
+<pre><code>          used  (Mb) gc trigger   (Mb)  max used   (Mb)
+Ncells 4387056 234.3    8418368  449.6   8418368  449.6
+Vcells 8786562  67.1  648038600 4944.2 906841008 6918.7</code></pre>
 </div>
 <div id="scc" class="section level2">
 <h2>SCC</h2>
@@ -1041,49 +1119,15 @@ Vcells 52427576 400.0 1903262240 14520.8 3138941721 23948.3</code></pre>
 
   mat &lt;- mat[rowSums(mat &gt; 0) &gt;= 10, cell.metadata$cell]
   mat.per.samp &lt;- splitMatrixByFactor(mat, cell.metadata$sample)
+  mat.per.samp %&lt;&gt;% .[sapply(., ncol) &gt; 500]
 
   p2s &lt;- plapply(mat.per.samp, createPagoda, min.transcripts.per.cell=800,
-                mc.preschedule=TRUE, n.cores=N_CORES, progress=FALSE)
+                 mc.preschedule=TRUE, n.cores=N_CORES, progress=FALSE)
 
   createConos(p2s, sample.meta=NULL, cell.meta=cell.metadata, n.cores=N_CORES)
-}, force=FORCE) %&gt;% Conos$new()</code></pre>
-<pre><code>Warning in data.table::fread(DataPath(&quot;SCC/counts.txt&quot;), sep = &quot;\t&quot;): Detected
-48164 column names but the data has 48165 columns (i.e. invalid file). Added 1
-extra default column name for the first column which is guessed to be row names
-or an index. Use setnames() afterwards if this guess is not correct, or fix the
-file write command that created the file to create a valid file.</code></pre>
-<pre><code>
--- Column specification --------------------------------------------------------
-cols(
-  nCount_RNA = col_character(),
-  nFeature_RNA = col_double(),
-  patient = col_double(),
-  tum.norm = col_character(),
-  level1_celltype = col_character(),
-  level2_celltype = col_character(),
-  level3_celltype = col_character()
-)</code></pre>
-<pre><code>Warning: 48164 parsing failures.
-row col  expected    actual                                                                                file
-  1  -- 7 columns 8 columns &#39;/d0-mendel/home/viktor_petukhov/projects/cacoaAnalysis/data/SCC/cell_metadata.txt&#39;
-  2  -- 7 columns 8 columns &#39;/d0-mendel/home/viktor_petukhov/projects/cacoaAnalysis/data/SCC/cell_metadata.txt&#39;
-  3  -- 7 columns 8 columns &#39;/d0-mendel/home/viktor_petukhov/projects/cacoaAnalysis/data/SCC/cell_metadata.txt&#39;
-  4  -- 7 columns 8 columns &#39;/d0-mendel/home/viktor_petukhov/projects/cacoaAnalysis/data/SCC/cell_metadata.txt&#39;
-  5  -- 7 columns 8 columns &#39;/d0-mendel/home/viktor_petukhov/projects/cacoaAnalysis/data/SCC/cell_metadata.txt&#39;
-... ... ......... ......... ...................................................................................
-See problems(...) for more details.</code></pre>
-<pre><code>found 0 out of 190 cached PCA space pairs ... </code></pre>
-<pre><code>running 190 additional PCA space pairs </code></pre>
-<pre><code> done</code></pre>
-<pre><code>inter-sample links using mNN </code></pre>
-<pre><code> done</code></pre>
-<pre><code>local pairs </code></pre>
-<pre><code> done</code></pre>
-<pre><code>building graph .</code></pre>
-<pre><code>.</code></pre>
-<pre><code>done</code></pre>
-<pre><code>Warning in embedKnnGraph(commute.times, n.neighbors = n.neighbors, names = adj.info$names, : Maximal number of estimated neighbors is 39. Consider increasing min.visited.verts, min.prob or min.prob.lower.</code></pre>
-<pre class="r"><code>con$plotGraph(groups=con$misc$cell_metadata$cellType, size=0.1, alpha=0.1)</code></pre>
+}, force=FORCE) %&gt;% Conos$new()
+
+con$plotGraph(groups=con$misc$cell_metadata$cellType, size=0.1, alpha=0.1)</code></pre>
 <p><img src="figure/preprocess.Rmd/unnamed-chunk-12-1.png" width="480" style="display: block; margin: auto;" /></p>
 <p>
 <button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-unnamed-chunk-12-1">
@@ -1109,7 +1153,18 @@ Date
 <tbody>
 <tr>
 <td>
-3085bf5
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/58bdad8f5bc1d39baf2df8cf961f2fe5fdff39a1/docs/figure/preprocess.Rmd/unnamed-chunk-12-1.png" target="_blank">58bdad8</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-01
+</td>
+</tr>
+<tr>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/3085bf54f5a6743763615e274a365caf8ff832a3/docs/figure/preprocess.Rmd/unnamed-chunk-12-1.png" target="_blank">3085bf5</a>
 </td>
 <td>
 viktor_petukhov
@@ -1123,9 +1178,9 @@ viktor_petukhov
 </div>
 </div>
 <pre class="r"><code>rm(con); gc();</code></pre>
-<pre><code>            used  (Mb) gc trigger    (Mb)   max used    (Mb)
-Ncells   5182595 276.8   15194756   811.5   36745925  1962.5
-Vcells 122581181 935.3 2381939596 18172.8 5813473782 44353.3</code></pre>
+<pre><code>          used  (Mb) gc trigger   (Mb)  max used   (Mb)
+Ncells 4336815 231.7    8418368  449.6   8418368  449.6
+Vcells 8007877  61.1  518430880 3955.4 906841008 6918.7</code></pre>
 <br>
 <p>
 <button type="button" class="btn btn-default btn-workflowr btn-workflowr-sessioninfo" data-toggle="collapse" data-target="#workflowr-sessioninfo" style="display: block;">
@@ -1158,63 +1213,47 @@ other attached packages:
 [19] workflowr_1.6.2    
 
 loaded via a namespace (and not attached):
-  [1] utf8_1.2.2           R.utils_2.10.1       tidyselect_1.1.1    
-  [4] htmlwidgets_1.5.3    grid_4.0.3           Rtsne_0.15          
-  [7] devtools_2.3.2       munsell_0.5.0        ica_1.0-2           
- [10] codetools_0.2-16     miniUI_0.1.1.1       future_1.22.1       
- [13] withr_2.4.2          colorspace_2.0-2     highr_0.9           
- [16] knitr_1.36           rstudioapi_0.13      Seurat_4.0.0        
- [19] stats4_4.0.3         ROCR_1.0-11          tensor_1.5          
- [22] listenv_0.8.0        labeling_0.4.2       git2r_0.27.1        
- [25] urltools_1.7.3       polyclip_1.10-0      farver_2.1.0        
- [28] rprojroot_2.0.2      parallelly_1.28.1    Matrix.utils_0.9.8  
- [31] vctrs_0.3.8          generics_0.1.0       xfun_0.26           
- [34] R6_2.5.1             doParallel_1.0.16    ggbeeswarm_0.6.0    
- [37] clue_0.3-59          spatstat.utils_2.0-0 cachem_1.0.6        
- [40] assertthat_0.2.1     promises_1.1.1       scales_1.1.1        
- [43] beeswarm_0.4.0       gtable_0.3.0         globals_0.14.0      
- [46] goftest_1.2-2        processx_3.4.5       drat_0.1.8          
- [49] rlang_0.4.11         GlobalOptions_0.1.2  splines_4.0.3       
- [52] lazyeval_0.2.2       broom_0.7.9          brew_1.0-6          
- [55] abind_1.4-5          yaml_2.2.1           reshape2_1.4.4      
- [58] modelr_0.1.8         backports_1.2.1      httpuv_1.5.4        
- [61] tools_4.0.3          usethis_1.6.3        ellipsis_0.3.2      
- [64] jquerylib_0.1.4      RColorBrewer_1.1-2   BiocGenerics_0.36.1 
- [67] ggridges_0.5.3       sessioninfo_1.1.1    Rcpp_1.0.7          
- [70] plyr_1.8.6           ps_1.4.0             prettyunits_1.1.1   
- [73] deldir_0.2-10        rpart_4.1-15         dendsort_0.3.3      
- [76] pbapply_1.4-3        GetoptLong_1.0.5     cowplot_1.1.1       
- [79] zoo_1.8-8            S4Vectors_0.28.1     SeuratObject_4.0.0  
- [82] grr_0.9.5            haven_2.4.1          ggrepel_0.9.1       
- [85] cluster_2.1.0        fs_1.5.0             here_1.0.1          
- [88] scattermore_0.7      data.table_1.14.2    RSpectra_0.16-0     
- [91] circlize_0.4.13      lmtest_0.9-38        triebeard_0.3.0     
- [94] reprex_0.3.0         RANN_2.6.1           whisker_0.4         
- [97] fitdistrplus_1.1-3   matrixStats_0.61.0   pkgload_1.2.1       
-[100] patchwork_1.1.1      xtable_1.8-4         mime_0.12           
-[103] hms_1.1.1            evaluate_0.14        RMTstat_0.3         
-[106] N2R_0.1.1            readxl_1.3.1         IRanges_2.24.1      
-[109] gridExtra_2.3        shape_1.4.6          testthat_3.0.0      
-[112] compiler_4.0.3       KernSmooth_2.23-17   crayon_1.4.1        
-[115] R.oo_1.24.0          htmltools_0.5.2      mgcv_1.8-33         
-[118] later_1.1.0.1        lubridate_1.7.9.2    DBI_1.1.1           
-[121] dbplyr_2.0.0         ComplexHeatmap_2.9.4 MASS_7.3-53         
-[124] rappdirs_0.3.3       cli_3.0.1            R.methodsS3_1.8.1   
-[127] parallel_4.0.3       pkgconfig_2.0.3      plotly_4.9.3        
-[130] xml2_1.3.2           foreach_1.5.1        vipor_0.4.5         
-[133] leidenAlg_0.1.0      rvest_0.3.6          callr_3.5.1         
-[136] digest_0.6.28        sctransform_0.3.2    RcppAnnoy_0.0.18    
-[139] spatstat.data_2.0-0  leiden_0.3.7         rmarkdown_2.11      
-[142] cellranger_1.1.0     Rook_1.1-1           uwot_0.1.10         
-[145] shiny_1.5.0          rjson_0.2.20         lifecycle_1.0.1     
-[148] nlme_3.1-149         mltools_0.3.5        jsonlite_1.7.2      
-[151] viridisLite_0.4.0    desc_1.3.0           fansi_0.5.0         
-[154] pillar_1.6.3         lattice_0.20-41      ggrastr_0.2.1       
-[157] fastmap_1.1.0        httr_1.4.2           pkgbuild_1.1.0      
-[160] survival_3.2-7       glue_1.4.2           remotes_2.2.0       
-[163] spatstat_1.64-1      png_0.1-7            iterators_1.0.13    
-[166] stringi_1.7.5        memoise_2.0.0        irlba_2.3.3         
-[169] future.apply_1.8.1  </code></pre>
+  [1] readxl_1.3.1         N2R_0.1.1            backports_1.2.1     
+  [4] circlize_0.4.13      splines_4.0.3        usethis_1.6.3       
+  [7] urltools_1.7.3       digest_0.6.28        foreach_1.5.1       
+ [10] htmltools_0.5.2      fansi_0.5.0          RMTstat_0.3         
+ [13] memoise_2.0.0        cluster_2.1.0        doParallel_1.0.16   
+ [16] remotes_2.2.0        ComplexHeatmap_2.9.4 modelr_0.1.8        
+ [19] matrixStats_0.61.0   R.utils_2.10.1       prettyunits_1.1.1   
+ [22] colorspace_2.0-2     rappdirs_0.3.3       rvest_0.3.6         
+ [25] ggrepel_0.9.1        haven_2.4.1          xfun_0.26           
+ [28] callr_3.5.1          crayon_1.4.1         jsonlite_1.7.2      
+ [31] brew_1.0-6           iterators_1.0.13     glue_1.4.2          
+ [34] gtable_0.3.0         GetoptLong_1.0.5     leidenAlg_0.1.0     
+ [37] pkgbuild_1.1.0       Rook_1.1-1           shape_1.4.6         
+ [40] BiocGenerics_0.36.1  scales_1.1.1         DBI_1.1.1           
+ [43] Rcpp_1.0.7           clue_0.3-59          stats4_4.0.3        
+ [46] httr_1.4.2           RColorBrewer_1.1-2   ellipsis_0.3.2      
+ [49] farver_2.1.0         pkgconfig_2.0.3      R.methodsS3_1.8.1   
+ [52] dbplyr_2.0.0         here_1.0.1           utf8_1.2.2          
+ [55] labeling_0.4.2       tidyselect_1.1.1     rlang_0.4.11        
+ [58] later_1.1.0.1        munsell_0.5.0        cellranger_1.1.0    
+ [61] tools_4.0.3          cachem_1.0.6         cli_3.0.1           
+ [64] generics_0.1.0       devtools_2.3.2       broom_0.7.9         
+ [67] evaluate_0.14        fastmap_1.1.0        yaml_2.2.1          
+ [70] processx_3.4.5       knitr_1.36           fs_1.5.0            
+ [73] nlme_3.1-149         whisker_0.4          ggrastr_1.0.0       
+ [76] R.oo_1.24.0          grr_0.9.5            xml2_1.3.2          
+ [79] compiler_4.0.3       rstudioapi_0.13      beeswarm_0.4.0      
+ [82] png_0.1-7            testthat_3.0.0       reprex_0.3.0        
+ [85] stringi_1.7.5        highr_0.9            ps_1.4.0            
+ [88] drat_0.1.8           desc_1.3.0           lattice_0.20-41     
+ [91] vctrs_0.3.8          pillar_1.6.3         lifecycle_1.0.1     
+ [94] triebeard_0.3.0      jquerylib_0.1.4      GlobalOptions_0.1.2 
+ [97] irlba_2.3.3          Matrix.utils_0.9.8   httpuv_1.5.4        
+[100] R6_2.5.1             promises_1.1.1       gridExtra_2.3       
+[103] vipor_0.4.5          IRanges_2.24.1       sessioninfo_1.1.1   
+[106] codetools_0.2-16     MASS_7.3-53          assertthat_0.2.1    
+[109] pkgload_1.2.1        rprojroot_2.0.2      rjson_0.2.20        
+[112] withr_2.4.2          S4Vectors_0.28.1     mgcv_1.8-33         
+[115] parallel_4.0.3       hms_1.1.1            grid_4.0.3          
+[118] rmarkdown_2.11       dendsort_0.3.3       Rtsne_0.15          
+[121] git2r_0.27.1         lubridate_1.7.9.2    ggbeeswarm_0.6.0    </code></pre>
 </div>
 </div>
 
