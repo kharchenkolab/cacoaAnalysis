@@ -14,11 +14,13 @@ Imports:
     dataorganizer (>= 0.1.0),
     dplyr,
     ggplot2,
+    ggpubr,
     ggrastr,
     magrittr,
     Matrix,
     pagoda2,
     R.utils (>= 2.10.1),
+    RColorBrewer,
     reticulate,
     sccore,
     workflowr

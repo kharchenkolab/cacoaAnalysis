@@ -122,3 +122,5 @@ runCacoaAnalyses <- function(cao, cluster.free.de=FALSE, cluster.based.de=FALSE,
 
   return(cao)
 }
+
+figurePath <- function(...) dataorganizer::OutputPath("figures", ...)
