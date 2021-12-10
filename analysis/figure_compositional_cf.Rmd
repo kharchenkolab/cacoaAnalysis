@@ -1,0 +1,251 @@
+---
+title: 'Cluster-free compositional figure'
+date: "`r Sys.Date()`"
+author: "[Viktor Petukhov](https://github.com/VPetukhov/)"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: '3'
+    toc_float: true
+    df_print: paged
+---
+
+```{r libs, include=FALSE, message=FALSE}
+library(tidyverse)
+library(magrittr)
+library(Matrix)
+library(dplyr)
+library(cacoa)
+library(ggpubr)
+library(ggrastr)
+library(reshape2)
+library(cowplot)
+library(dataorganizer)
+
+p_theme <- theme(
+  axis.text=element_text(size=8), axis.title=element_text(size=10),
+  legend.title=element_text(size=10), legend.text=element_text(size=8), legend.key.width=unit(12, "pt"),
+  plot.margin=margin(b=2, t=2), legend.background=element_blank()
+)
+
+theme_set(theme_bw() + p_theme)
+
+options(ggrastr.default.dpi=100)
+rast <- function(...) rasterise(..., dev="ragg_png")
+
+devtools::load_all()
+```
+
+### Main figure
+
+### PF
+
+```{r}
+cao_pf <- DataPath("PF/cao.rds") %>% readr::read_rds() %>% Cacoa$new()
+cao_pf$plot.theme %<>% {. + p_theme}
+```
+
+```{r, fig.width=8, fig.height=2}
+# leg_theme <- theme(legend.key.width=unit(10, "pt"), legend.text=element_text(size=10), 
+#                    legend.background=element_blank(), legend.key.height=unit(14, "pt"))
+leg_theme <- theme(legend.key.height=unit(10, "pt"), legend.text=element_text(size=9), 
+                   legend.background=element_blank())
+
+p_lims <- list("Endothelial Cells", c("Macrophages", "cDCs", "Monocytes")) %>% lapply(function(ct) {
+  getCellTypeEmbeddingLimits(cao_pf$embedding, cell.groups=cao_pf$cell.groups, groups.to.plot=ct, quant=0.004)
+})
+
+p_genes <- c("SPP1", "DKK2", "COL15A1", "CPE")
+
+gg_markers <- mapply(function(g, pl) {
+  p.cols <- cao_pf$cache$joint.count.matrix.norm[,g] %>% pmin(., quantile(., 0.995))
+  cao_pf$data.object$plotGraph(colors=p.cols, size=0.2, alpha=0.1, show.legend=TRUE, 
+                               legend.position=c(1, 1), legend.title="Expr.") +
+    leg_theme + lims(x=pl$x, y=pl$y) + theme(legend.key.width=unit(8, "pt"), legend.key.height=unit(9, "pt"))
+}, p_genes, list(p_lims[[2]], p_lims[[1]], p_lims[[1]], p_lims[[1]]), SIMPLIFY=FALSE)
+
+gg_markers %>%
+  plot_grid(plotlist=., labels=p_genes, nrow=1, label_fontface="italic", label_x=0.02,
+            hjust=0, label_size=16)
+```
+
+```{r}
+cao_pf$estimateDiffCellDensity(type='permutation', n.permutations=1000, verbose=TRUE, 
+                               n.cores=45, name='cell.density.kde')
+```
+
+```{r}
+gg_pf_emb <- cao_pf$plotEmbedding(color.by='cell.groups', font.size=c(2, 3.5), size=0.25, alpha=0.1) +
+  theme(panel.grid=element_blank())
+
+ggs_pf_dens <- cao_pf$plotCellDensity(
+  add.points=TRUE, show.grid=TRUE, show.cell.groups=FALSE, legend.title="Density",
+  name='cell.density.kde'
+) %>% lapply(`+`, theme(plot.title=element_blank()))
+
+gg_pf_diff <- cao_pf$plotDiffCellDensity(adjust.pvalues=FALSE, legend.position=c(0, 1), 
+                                         color.range=c("1%", "99%"), name='cell.density.kde',
+                                         type='permutation')
+gg_pf_diff_adj <- cao_pf$plotDiffCellDensity(adjust.pvalues=TRUE, legend.position=c(0, 1), min.z=0.5,
+                                             name='cell.density.kde', type='permutation')
+
+gg_prop_change <- cao_pf$plotDiffCellDensity(type="subtract", legend.position=c(0, 1), 
+                                             color.range=c("1%", "99%"), name='cell.density.kde') +
+  leg_theme
+```
+
+```{r, fig.width=4, fig.height=4, message=FALSE, warning=FALSE}
+# ggs_pf_dens[[1]] %<>% {. + theme_legend_position(c(0, 1)) + leg_theme}
+# 
+# gg_pf_emb
+# lapply(ggs_pf_dens, `+`, theme(plot.margin=margin()))
+# gg_markers
+# gg_prop_change + leg_theme
+# gg_pf_diff + leg_theme
+# gg_pf_diff_adj + leg_theme
+```
+
+```{r, fig.width=6, fig.height=5.5, message=FALSE, warning=FALSE}
+ggs_pf_dens[[1]] %<>% {. + theme_legend_position(c(0, 1)) + leg_theme}
+plot_grid(
+  plot_grid(
+    gg_pf_emb + theme(plot.margin=margin()),
+    plot_grid(
+      plotlist=lapply(ggs_pf_dens, `+`, theme(plot.margin=margin())),
+      ncol=1
+    ),
+    plot_grid(
+      plotlist=gg_markers, labels=p_genes, label_fontface="italic", label_x=0.02, 
+      hjust=0, label_size=16, ncol=1
+    ),
+    ncol=3, rel_widths=c(3.5, 2, 1.2)
+  ),
+  plot_grid(
+    gg_prop_change + leg_theme,
+    gg_pf_diff + leg_theme,
+    gg_pf_diff_adj + leg_theme,
+    nrow=1
+  ),
+  nrow=2, rel_heights=c(1.6, 1)
+)
+```
+
+### MS
+
+```{r}
+cao_ms <- DataPath("MS/cao.rds") %>% readr::read_rds() %>% Cacoa$new()
+cao_ms$plot.theme %<>% {. + p_theme}
+```
+
+```{r, fig.width=6, fig.height=2, message=FALSE, warning=FALSE}
+p_lims_ms <- getCellTypeEmbeddingLimits(
+  cao_ms$embedding, cell.groups=cao_ms$cell.groups, groups.to.plot="Astrocytes", quant=0.01
+)
+
+p_genes <- c("GFAP", "CD44", "TNC")
+
+gg_ms_markers <- lapply(p_genes, function(g) {
+  p.cols <- cao_ms$cache$joint.count.matrix.norm[,g]# %>% pmin(., quantile(., 0.995))
+  cao_ms$data.object$plotGraph(colors=p.cols, size=0.2, alpha=0.1, show.legend=TRUE, 
+                               legend.position=c(1, 0), legend.title="Expr.", color.range=c(0, 0.8)) +
+    leg_theme + lims(x=p_lims_ms$x, y=p_lims_ms$y)
+})
+
+gg_ms_markers[2:3] %<>% lapply(`+`, theme(legend.position="none"))
+
+plot_grid(plotlist=gg_ms_markers, labels=p_genes, nrow=1, label_fontface="italic", label_x=0.02,
+          hjust=0, label_size=16)
+```
+
+```{r, fig.width=2, fig.height=2, message=FALSE, warning=FALSE}
+cd44_ast <- cao_ms$cell.groups %>% {names(.)[. == "Astrocytes"]} %>% 
+  .[cao_ms$test.results$cell.density.graph$diff$wilcox$adj[.] > 1]
+
+cm_agg <- cao_ms$cache$joint.count.matrix[cd44_ast,] %>% 
+  sccore::colSumByFactor(cao_ms$sample.per.cell[cd44_ast])
+
+p_df <- (cm_agg[,"SHISA9"] / rowSums(cm_agg)) %>% 
+  .[!is.na(.)] %>% {tibble(expr=1000 * ., sg=cao_ms$sample.groups[names(.)], type=names(.))}
+
+gg_shisa <- ggplot(p_df, aes(x=sg, y=expr, fill=sg)) +
+  geom_boxplot(outlier.size=0) +
+  ggbeeswarm::geom_quasirandom(size=1) +
+  ylab("SHISA9 expr.") +
+  scale_fill_manual(values=cao_ms$sample.groups.palette) +
+  theme(legend.position="none", axis.title.x=element_blank(), panel.grid.major.x=element_blank(),
+        panel.grid.minor=element_blank())
+
+gg_shisa
+```
+
+```{r, fig.width=8.5, fig.height=5, message=FALSE, warning=FALSE}
+gg_ms_emb <- cao_ms$plotEmbedding(color.by='cell.groups', font.size=c(2.5, 4.5), size=0.25, alpha=0.1) +
+  theme(panel.grid=element_blank())
+
+gg_ms_diff <- cao_ms$plotDiffCellDensity(
+  type="subtract", legend.position=c(0, 0), size=0.1, alpha=0.1,
+  color.range=c("1%", "99%"), name="cell.density.graph"
+) + guides(color=guide_colorbar(title="Prop.\nchange"))
+
+gg_ms_diff_adj <- cao_ms$plotDiffCellDensity(
+  adjust.pvalues=TRUE, legend.position=c(0, 0), min.z=0.5, size=0.1, alpha=0.1,
+  name="cell.density.graph"
+)
+```
+
+```{r, fig.width=8.5, fig.height=3.5, message=FALSE, warning=FALSE}
+gg_mark_list <- c(gg_ms_markers, list(gg_shisa + theme(plot.margin=margin(l=3)))) %>% 
+  lapply(rast)
+
+gg_mark_list[[1]] %<>% {. + theme(legend.key.height=unit(7, "pt"), legend.text=element_text(size=9))}
+
+plot_grid(
+  rast(gg_ms_emb) + theme(plot.margin=margin(b=0, t=2, r=1, l=0)),
+  plot_grid(
+    plot_grid(
+      rast(gg_ms_diff) + leg_theme,
+      rast(gg_ms_diff_adj) + leg_theme,
+      nrow=1
+    ),
+    plot_grid(
+      plotlist=gg_mark_list, 
+      labels=p_genes, nrow=1, label_fontface="italic", label_x=0.02, hjust=0, label_size=16
+    ),
+    nrow=2, rel_heights=c(6, 3)
+  ),
+  nrow=1, rel_widths=c(2.1, 3)
+)
+
+ggsave(figurePath("2_composition_cf_ms.pdf"))
+```
+
+
+## Supp. figure
+
+```{r, fig.width=8, fig.height=8}
+ggs_pf_dens <- cao_pf$plotCellDensity(
+  add.points=TRUE, show.grid=TRUE, show.cell.groups=FALSE, size=0.1, alpha=0.1,
+  name="cell.density.graph", legend.title="Density"
+) %>% lapply(`+`, theme(plot.title=element_blank()))
+
+gg_pf_diff <- cao_pf$plotDiffCellDensity(
+  adjust.pvalues=FALSE, legend.position=c(0, 1), size=0.1, alpha=0.1,
+  color.range=c("1%", "99%"), name="cell.density.graph", type="wilcox"
+)
+
+gg_pf_diff_adj <- cao_pf$plotDiffCellDensity(
+  adjust.pvalues=TRUE, legend.position=c(0, 1), min.z=0.5, size=0.1, alpha=0.1,
+  name="cell.density.graph", type="wilcox",
+)
+
+# ggs_pf_dens[[1]] %<>% 
+#   cacoa:::transferLabelLayer(cao_pf$plotEmbedding(groups=p_cell_groups), font.size=c(3, 5))
+
+plot_grid(
+  ggs_pf_dens[[1]] + theme_legend_position(c(0, 1)) + leg_theme,
+  ggs_pf_dens[[2]],
+  gg_pf_diff + leg_theme,
+  gg_pf_diff_adj + leg_theme,
+  nrow=2, labels=names(ggs_pf_dens), label_x=0.98, hjust=1
+)
+```

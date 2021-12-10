@@ -1,0 +1,273 @@
+---
+title: 'Cluster-based compositional analysis'
+date: "`r Sys.Date()`"
+author: "[Viktor Petukhov](https://github.com/VPetukhov/)"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: '3'
+    toc_float: true
+    df_print: paged
+---
+
+
+```{r libs, include=FALSE, message=FALSE}
+library(tidyverse)
+library(magrittr)
+library(Matrix)
+library(dplyr)
+library(cacoa)
+library(ggpubr)
+library(reshape2)
+library(cowplot)
+library(dataorganizer)
+
+theme_set(
+  theme_minimal() + 
+    theme(axis.line=element_line(color="black", size = 0.1))
+)
+
+p_theme <- theme(
+  axis.text=element_text(size=8), axis.title=element_text(size=10),
+  legend.title=element_text(size=10), legend.text=element_text(size=8), legend.key.width=unit(12, "pt"),
+  plot.margin=margin(b=5, t=5, l=1)
+)
+
+devtools::load_all()
+```
+
+```{r}
+getPValueDf <- function(cao, cell.group.order) {
+  freqs <- cao$test.results$coda$cnts %>% {. / rowSums(.)}
+  pval.df <- cao$sample.groups %>% {split(names(.), .)} %>% 
+    {matrixTests::col_wilcoxon_twosample(freqs[.[[1]],], freqs[.[[2]],])} %$% 
+    setNames(pvalue, rownames(.)) %>% 
+    p.adjust("BH") %>% cacoa:::pvalueToCode(ns.symbol="") %>% 
+    {tibble(ind=names(.), freq=., coda=cao$test.results$coda$padj[names(.)])} %>% 
+    mutate(ind=factor(ind, levels=cell.group.order), coda=cacoa:::pvalueToCode(coda, ns.symbol="")) %>% 
+    rename(Freqs=freq, CoDA=coda)
+  
+  return(pval.df)
+}
+
+addPvalueToCoda <- function(gg, cao, x.vals, show.legend=FALSE, size=4, legend.title="Significance") {
+  pval.df <- getPValueDf(cao, cell.group.order=levels(gg$data$ind))
+  gg <- gg + 
+    geom_text(aes(x=x.vals[1], label=CoDA, color="CoDA"), data=pval.df, vjust=0.75, size=size) +
+    geom_text(aes(x=x.vals[2], label=Freqs, color="Wilcox"), data=pval.df, vjust=0.75, size=size) +
+    scale_color_manual(values=c("black", "darkred"))
+  
+  if (show.legend) {
+    gg <- gg + 
+      cacoa:::theme_legend_position(c(1, 0.04)) +
+      guides(fill=guide_none(), color=guide_legend(title=legend.title))
+  }
+  return(gg)
+}
+```
+
+## Toy example
+
+Simulate data:
+
+```{r, message=FALSE}
+n.cell.types <- 7
+cell.types <- paste('type', 1:n.cell.types, sep='')
+
+n.samples <- 20  # number of samples in one group
+groups.name <- c('case', 'control')
+groups.type <- c(rep(groups.name[1], n.samples), rep(groups.name[2], n.samples))
+sample.names <- paste(groups.type, 1:(2*n.samples), sep = '')
+groups <- setNames(groups.type %in% groups.name[1], sample.names)
+
+palette <- RColorBrewer::brewer.pal(n.cell.types, "Set1") %>% setNames(cell.types)
+
+sample_groups <- c("control", "case")[groups + 1] %>% setNames(names(groups))
+
+sg_pal <- c(case="#BF1363", control="#39A6A3")
+```
+
+```{r, fig.width=5, fig.height=3}
+cnt.shift <- 100
+cnt.shift2 <- -15
+
+set.seed(1124)
+
+cnts <- lapply(1:(2 * n.samples), function(i) round(rnorm(n.cell.types, mean=50, sd=5))) %>% 
+  do.call(rbind, .) %>% set_rownames(sample.names) %>% set_colnames(cell.types)
+
+cnts[,1] <- cnts[,1] + groups * cnt.shift
+cnts[,2] <- cnts[,2] + groups * cnt.shift2
+cnts[,3] <- cnts[,3] + groups * cnt.shift2
+
+freqs <- cnts %>% {. / rowSums(.)}
+
+res <- cacoa:::runCoda(cnts, groups, n.seed=239)
+dfs <- cacoa:::estimateCdaSpace(cnts, groups)
+```
+
+Prepare plots:
+
+```{r}
+theme_text_rot <- theme(axis.text.x=element_text(angle=45, hjust=1, vjust=1))
+gg_boxes <- list(freqs=freqs, counts=cnts) %>% lapply(function(mat) {
+  df <- melt(t(mat)) %>% set_colnames(c('type', 'sample.name', 'value'))
+  df[['group']] <- groups.name[2 - (df$sample.name %in% sample.names[1:n.samples])]
+  
+  ggplot(df, aes(x=type, y=value, fill=group)) +
+    geom_boxplot(outlier.shape = NA) + 
+    # geom_jitter(position=position_jitterdodge(jitter.width=0.2), alpha=1, size = 0.1) + 
+    scale_fill_manual(values=sg_pal) + 
+    stat_compare_means(aes(label=cacoa:::pvalueToCode(..p.adj.., ns.symbol="")), 
+                       label.x=1.5, label.y=max(df$value), size=2.5) +
+    theme(legend.title=element_blank(), axis.title.x=element_blank()) + 
+    theme_text_rot +
+    cacoa:::theme_legend_position(c(1, 1))
+})
+
+gg_boxes$counts %<>% {. + ylab("Counts")}
+gg_boxes$freqs %<>% {. + ylab("Proportions")}
+
+gg_surface <- ggplot(dfs$red, aes(x=S1, y=S2)) +
+  geom_abline(slope=-5, intercept=0.1) +
+  geom_point(aes(colour=sample_groups)) +
+  geom_hline(yintercept=0, linetype="dashed", size=0.2) +
+  geom_vline(xintercept=0, linetype="dashed", size=0.2) +
+  labs(colour="Condition", x="CDA-1", y="CDA-2") + 
+  scale_color_manual(values=sg_pal) +
+  theme(panel.grid=element_blank(), legend.position="none")
+
+gg_coda <- res %$% cacoa:::plotCellLoadings(
+  loadings, padj, palette=palette, jitter.alpha=0.0,
+  ref.level=groups.name[2], target.level=groups.name[1], 
+  ref.load.level=res$ref.load.level, annotation.position=0.7
+) + theme(
+  panel.border=element_rect(size=0.1, fill="transparent"),
+  panel.grid.minor.x=element_blank()
+)
+```
+
+```{r, fig.width=8.5, fig.height=2.25}
+gg_toy <- plot_grid(
+  gg_boxes$counts + ylab("Counts"),
+  gg_boxes$freqs + ylab("Proportions"),
+  gg_surface + theme(plot.margin=margin(t=10)),
+  gg_coda,
+  nrow=1
+)
+
+gg_toy
+```
+
+```{r, fig.width=3, fig.height=3}
+tree_theme <- theme(
+  legend.key.height=unit(10, "pt"), legend.key.width=unit(14, "pt"), 
+  legend.position="bottom", plot.margin=margin(),
+  axis.text.y=element_text(hjust=1, vjust=0.5, margin=margin()), axis.text.x=element_blank(), 
+  axis.ticks=element_blank()
+)
+gg_toy_tree <- cacoa:::plotContrastTree(
+  cnts, groups, ref.level=groups.name[2], target.level=groups.name[1], plot.theme=NULL,
+  adjust.pvalues=TRUE, loadings.mean=rowMeans(res$loadings), palette=sg_pal
+) + coord_flip() + tree_theme + theme(legend.margin=margin(l=10, t=-30)) +
+  guides(color=guide_legend(direction="vertical", title="Condition"))
+
+gg_toy_tree
+```
+
+## PF
+
+```{r}
+cao_pf <- DataPath("PF/cao.rds") %>% readr::read_rds() %>% Cacoa$new()
+cao_pf$plot.theme %<>% {. + p_theme}
+```
+
+```{r, fig.width=6, fig.height=5, message=FALSE, warning=FALSE}
+gg_pf_coda <- cao_pf$plotCellLoadings(show.pvals=FALSE, alpha=0.0, annotation.x=0.61) +
+  scale_x_continuous(limits=c(-0.61, 0.7), expand=c(0, 0.0, 0.0, 0.1))
+
+gg_pf_coda %<>% addPvalueToCoda(cao_pf, c(0.53, 0.7), show.legend=FALSE, size=4)
+
+gg_pf_coda
+```
+
+```{r, fig.width=5, fig.height=4, message=FALSE, warning=FALSE}
+cd45_types <- cao_pf$cache$joint.count.matrix[,"PTPRC"] %>% 
+  split(cao_pf$cell.groups[names(.)]) %>% 
+  sapply(function(x) mean(x > 0)) %>% sort() %>% {names(.)[. > 0.1]}
+
+cao_pf$estimateCellLoadings(cells.to.remain=cd45_types, name="imm.coda")
+gg_pf_coda_imm <- cao_pf$plotCellLoadings(show.pvals=FALSE, alpha=0.0, name="imm.coda", annotation.x=1) +
+  scale_x_continuous(limits=c(-1, 1), expand=c(0.01, 0.0))
+
+gg_pf_coda_imm
+```
+
+## MS
+
+```{r}
+cao_ms <- DataPath("MS/cao.rds") %>% readr::read_rds() %>% Cacoa$new()
+cao_ms$plot.theme %<>% {. + p_theme}
+```
+
+```{r, fig.width=4, fig.height=4, warning=FALSE, message=FALSE}
+gg_ms_coda <- cao_ms$plotCellLoadings(show.pvals=FALSE, alpha=0.0, jitter.size=0.25, annotation.x=1) +
+  scale_x_continuous(limits=c(-1, 1), expand=c(0, 0, 0.05, 0.0))
+gg_ms_coda %<>% addPvalueToCoda(cao_ms, c(0.85, 1), size=4)
+gg_ms_coda
+```
+
+```{r, fig.width=4, fig.height=5}
+gg_ms_tree <- cao_ms$plotContrastTree() + coord_flip() + tree_theme + 
+  guides(color=guide_legend(direction="vertical", title="Condition", order=1),
+         fill=guide_colorbar(title.position="top", order=2))
+
+gg_ms_tree
+```
+
+## Compile figure
+
+```{r, fig.width=8.5, fig.height=7.5, message=FALSE, warning=FALSE}
+p_theme <- theme(
+  axis.text=element_text(size=8), axis.title=element_text(size=10),
+  legend.title=element_text(size=10), legend.text=element_text(size=8), legend.key.width=unit(12, "pt"),
+  plot.margin=margin(b=5, t=5, l=1)
+)
+
+theme_margin <- theme(plot.margin=margin(r=10, b=10, t=2))
+
+gg <- plot_grid(
+  plot_grid(
+    gg_boxes$counts + p_theme + theme(legend.title=element_blank()) + theme_margin,
+    gg_boxes$freqs + p_theme + theme(legend.title=element_blank()) + theme_margin,
+    gg_surface + p_theme + theme_margin + theme(axis.title.x=element_text(margin=margin(t=-10))), 
+    gg_coda + p_theme + theme(axis.title.x=element_text(margin=margin(t=-10)), plot.margin=margin(), 
+                              axis.title.y=element_blank()),
+    nrow=1, align="h"
+  ),
+  plot_grid(
+    gg_pf_coda + p_theme,
+    plot_grid(
+      gg_pf_coda_imm + p_theme + theme(plot.margin=margin(r=10, b=5), axis.title.x=element_text(margin=margin())), 
+      gg_ms_coda + p_theme,
+      ncol=1, rel_heights=c(0.7, 1, 1), align="v"
+    ),
+    plot_grid(
+      gg_toy_tree + p_theme + 
+        theme(legend.margin=margin(), legend.box.margin=margin(l=-30, t=-25), plot.margin=margin(l=-50)), 
+      gg_ms_tree + 
+        scale_y_continuous(expand=c(0, 0, 0.1, 0)) + p_theme + 
+        theme(legend.margin=margin(), legend.box.margin=margin(l=-30, t=-35), plot.margin=margin(l=-50, t=7)), 
+      ncol=1, rel_heights=c(0.65, 1), align="v"
+    ),
+    nrow=1, rel_widths=c(1, 1, 0.6)
+  ),
+  ncol=1, rel_heights=c(1, 2.9)
+)
+
+grDevices::cairo_pdf(figurePath("1_composition.pdf"), width=8.5, height=8)
+gg
+dev.off()
+
+gg
+```

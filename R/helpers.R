@@ -124,3 +124,12 @@ runCacoaAnalyses <- function(cao, cluster.free.de=FALSE, cluster.based.de=FALSE,
 }
 
 figurePath <- function(...) dataorganizer::OutputPath("figures", ...)
+
+getCellTypeEmbeddingLimits <- function(embedding, cell.groups, groups.to.plot, quant=0.01) {
+  p.lims <- cell.groups %>% {names(.)[. %in% groups.to.plot]} %>%
+    embedding[.,] %>% apply(2, quantile, c(quant, 1 - quant))
+
+  res <- list(x=p.lims[,1], y=p.lims[,2]) %>%
+    lapply(function(v) v + c(-1, 1) * diff(v) * quant * 2)
+  return(res)
+}
