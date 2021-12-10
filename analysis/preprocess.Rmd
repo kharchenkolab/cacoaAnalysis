@@ -1,5 +1,5 @@
 ---
-title: 'Preprocess the MS dataset'
+title: 'Preprocess all datasets with Pagoda2 and Conos'
 date: "`r Sys.Date()`"
 author: "[Viktor Petukhov](https://github.com/VPetukhov/)"
 output:
