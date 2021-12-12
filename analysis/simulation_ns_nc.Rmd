@@ -1,5 +1,5 @@
 ---
-title: 'Simulation Note'
+title: 'Simulations for the number of cells and samples'
 date: "`r Sys.Date()`"
 author: "[Viktor Petukhov](https://github.com/VPetukhov/)"
 output:
@@ -22,7 +22,6 @@ library(sccore)
 devtools::load_all()
 
 N_CORES <- 50
-FORCE <- FALSE
 
 DE_FRAC <- 0.1
 LFC <- 1.5
