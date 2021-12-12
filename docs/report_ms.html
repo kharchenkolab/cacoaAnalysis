@@ -11,9 +11,9 @@
 
 <meta name="author" content="Viktor Petukhov" />
 
-<meta name="date" content="2021-12-08" />
+<meta name="date" content="2021-12-10" />
 
-<title>Cacoa Report for the Multiple Sclerosis dataset</title>
+<title>Multiple Sclerosis Dataset Report</title>
 
 <script src="site_libs/jquery-3.6.0/jquery-3.6.0.min.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -347,9 +347,9 @@ div.tocify {
 
 
 
-<h1 class="title toc-ignore">Cacoa Report for the Multiple Sclerosis dataset</h1>
+<h1 class="title toc-ignore">Multiple Sclerosis Dataset Report</h1>
 <h4 class="author"><a href="https://github.com/VPetukhov/">Viktor Petukhov</a></h4>
-<h4 class="date">2021-12-08</h4>
+<h4 class="date">2021-12-10</h4>
 
 </div>
 
@@ -374,7 +374,7 @@ div.tocify {
 <div class="tab-content">
 <div id="summary" class="tab-pane fade in active">
 <p>
-<strong>Last updated:</strong> 2021-12-08
+<strong>Last updated:</strong> 2021-12-10
 </p>
 <p>
 <strong>Checks:</strong> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> 7 <span class="glyphicon glyphicon-exclamation-sign text-danger" aria-hidden="true"></span> 0
@@ -465,16 +465,16 @@ This reproducible <a href="http://rmarkdown.rstudio.com">R Markdown</a> analysis
 <div class="panel panel-default">
 <div class="panel-heading">
 <p class="panel-title">
-<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongRepositoryversionstrongahrefhttpsgithubcomkharchenkolabcacoaAnalysistree91efca9d06af3e588e453b3251cc95434bdd42f3targetblank91efca9a"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Repository version:</strong> <a href="https://github.com/kharchenkolab/cacoaAnalysis/tree/91efca9d06af3e588e453b3251cc95434bdd42f3" target="_blank">91efca9</a> </a>
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongRepositoryversionstrongahrefhttpsgithubcomkharchenkolabcacoaAnalysistreed8640295130ffb143a1f0b6267ca1fe233002820targetblankd864029a"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Repository version:</strong> <a href="https://github.com/kharchenkolab/cacoaAnalysis/tree/d8640295130ffb143a1f0b6267ca1fe233002820" target="_blank">d864029</a> </a>
 </p>
 </div>
-<div id="strongRepositoryversionstrongahrefhttpsgithubcomkharchenkolabcacoaAnalysistree91efca9d06af3e588e453b3251cc95434bdd42f3targetblank91efca9a" class="panel-collapse collapse">
+<div id="strongRepositoryversionstrongahrefhttpsgithubcomkharchenkolabcacoaAnalysistreed8640295130ffb143a1f0b6267ca1fe233002820targetblankd864029a" class="panel-collapse collapse">
 <div class="panel-body">
 <p>
 Great! You are using Git for version control. Tracking code development and connecting the code version to the results is critical for reproducibility.
 </p>
 <p>
-The results in this page were generated with repository version <a href="https://github.com/kharchenkolab/cacoaAnalysis/tree/91efca9d06af3e588e453b3251cc95434bdd42f3" target="_blank">91efca9</a>. See the <em>Past versions</em> tab to see a history of the changes made to the R Markdown and HTML files.
+The results in this page were generated with repository version <a href="https://github.com/kharchenkolab/cacoaAnalysis/tree/d8640295130ffb143a1f0b6267ca1fe233002820" target="_blank">d864029</a>. See the <em>Past versions</em> tab to see a history of the changes made to the R Markdown and HTML files.
 </p>
 <p>
 Note that you need to be careful to ensure that all relevant files for the analysis have been committed to Git prior to generating the results (you can use <code>wflow_publish</code> or <code>wflow_git_commit</code>). workflowr only checks the R Markdown file, but you know if there are other scripts or data files that it depends on. Below is the status of the Git repository when the results were generated:
@@ -485,9 +485,18 @@ Ignored files:
     Ignored:    .Rproj.user/
     Ignored:    analysis/.Rhistory
     Ignored:    analysis/de_figure_ep.nb.html
-    Ignored:    analysis/figure/
+    Ignored:    analysis/figure_compositional.nb.html
+    Ignored:    analysis/figure_compositional_cf.nb.html
+    Ignored:    analysis/figure_expression_shifts.nb.html
+    Ignored:    analysis/figure_heterogeneity.nb.html
+    Ignored:    analysis/prepare_cacoa_results.nb.html
     Ignored:    analysis/preprocess.nb.html
+    Ignored:    analysis/report_asd.nb.html
+    Ignored:    analysis/report_az.nb.html
+    Ignored:    analysis/report_ep.nb.html
     Ignored:    analysis/report_ms.nb.html
+    Ignored:    analysis/report_pf.nb.html
+    Ignored:    analysis/report_scc.nb.html
     Ignored:    analysis/report_template.nb.html
     Ignored:    analysis/simulation_distances.nb.html
     Ignored:    analysis/simulation_note.nb.html
@@ -500,12 +509,14 @@ Ignored files:
     Ignored:    data/PF/
     Ignored:    data/SCC/
     Ignored:    man/
+    Ignored:    output/figures/
 
 Untracked files:
     Untracked:  analysis/cluster_free_de_pf.Rmd
     Untracked:  analysis/de_figure_ep.Rmd
     Untracked:  analysis/fig_cluster_free_de.Rmd
-    Untracked:  analysis/prepare_cacoa_results.Rmd
+    Untracked:  analysis/figure_expression_shifts.Rmd
+    Untracked:  analysis/figure_heterogeneity.Rmd
     Untracked:  analysis/report_template.Rmd
     Untracked:  analysis/simulation_note.Rmd
 
@@ -551,6 +562,40 @@ Message
 Rmd
 </td>
 <td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/27eea48fd3f2203e43c13144cf5c2bc9af80057f/analysis/report_ms.Rmd" target="_blank">27eea48</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-09
+</td>
+<td>
+Updated individual dataset reports
+</td>
+</tr>
+<tr>
+<td>
+html
+</td>
+<td>
+<a href="https://rawcdn.githack.com/kharchenkolab/cacoaAnalysis/42b84b1af6356a649a89f10ab778c5341bf8b8c0/docs/report_ms.html" target="_blank">42b84b1</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-08
+</td>
+<td>
+Compiled MS report
+</td>
+</tr>
+<tr>
+<td>
+Rmd
+</td>
+<td>
 <a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/91efca9d06af3e588e453b3251cc95434bdd42f3/analysis/report_ms.Rmd" target="_blank">91efca9</a>
 </td>
 <td>
@@ -570,6 +615,7 @@ MS report
 </div>
 </div>
 </div>
+<p><a href="https://www.nature.com/articles/s41586-019-1404-z"><em>Publication</em></a></p>
 <pre class="r"><code>library(cacoa)
 library(dataorganizer)
 
@@ -592,6 +638,43 @@ cao$plot.params &lt;- list(size=0.1, alpha=0.1, font.size=c(2, 3))</code></pre>
 }) %&gt;% 
   plot_grid(plotlist=., ncol=2, labels=c(&quot;CoDA&quot;, &quot;Expression&quot;), hjust=0, label_x=0.02, label_y=0.99)</code></pre>
 <p><img src="figure/report_ms.Rmd/unnamed-chunk-2-1.png" width="768" style="display: block; margin: auto;" /></p>
+<p>
+<button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-unnamed-chunk-2-1">
+Past versions of unnamed-chunk-2-1.png
+</button>
+</p>
+<div id="fig-unnamed-chunk-2-1" class="collapse">
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/42b84b1af6356a649a89f10ab778c5341bf8b8c0/docs/figure/report_ms.Rmd/unnamed-chunk-2-1.png" target="_blank">42b84b1</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-08
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
 <pre class="r"><code>sample_meta &lt;- cao$data.object$misc$sample_metadata
 lapply(c(&quot;coda&quot;, &quot;expression.shifts&quot;), function(sp) {
   smd &lt;- as.data.frame(sample_meta) %&gt;% dplyr::select(-sample, -diagnosis)
@@ -606,6 +689,43 @@ lapply(c(&quot;coda&quot;, &quot;expression.shifts&quot;), function(sp) {
 }) %&gt;% 
   plot_grid(plotlist=., ncol=2, labels=c(&quot;CoDA&quot;, &quot;Expression&quot;), hjust=0, label_x=0.2, label_y=0.98)</code></pre>
 <p><img src="figure/report_ms.Rmd/unnamed-chunk-3-1.png" width="672" style="display: block; margin: auto;" /></p>
+<p>
+<button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-unnamed-chunk-3-1">
+Past versions of unnamed-chunk-3-1.png
+</button>
+</p>
+<div id="fig-unnamed-chunk-3-1" class="collapse">
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/42b84b1af6356a649a89f10ab778c5341bf8b8c0/docs/figure/report_ms.Rmd/unnamed-chunk-3-1.png" target="_blank">42b84b1</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-08
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
 <p>There is significant separation by Capbatch, Seqbatch and stage. Capbatch and Seqbatch are very similar, so we show only the former.</p>
 <pre class="r"><code>lapply(c(&#39;coda&#39;, &#39;expression&#39;), function(sp) {
   lapply(c(&quot;Seqbatch&quot;, &quot;stage&quot;), function(n) {
@@ -613,6 +733,43 @@ lapply(c(&quot;coda&quot;, &quot;expression.shifts&quot;), function(sp) {
   }) %&gt;% plot_grid(plotlist=., nrow=1)
 }) %&gt;% plot_grid(plotlist=., ncol=1)</code></pre>
 <p><img src="figure/report_ms.Rmd/unnamed-chunk-4-1.png" width="768" style="display: block; margin: auto;" /></p>
+<p>
+<button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-unnamed-chunk-4-1">
+Past versions of unnamed-chunk-4-1.png
+</button>
+</p>
+<div id="fig-unnamed-chunk-4-1" class="collapse">
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/42b84b1af6356a649a89f10ab778c5341bf8b8c0/docs/figure/report_ms.Rmd/unnamed-chunk-4-1.png" target="_blank">42b84b1</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-08
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
 <p>CoDA space (top row) has even stronger separation by batch than expression space.</p>
 </div>
 <div id="compositional-differences" class="section level2">
@@ -621,8 +778,82 @@ lapply(c(&quot;coda&quot;, &quot;expression.shifts&quot;), function(sp) {
 <h3>Cluster-based</h3>
 <pre class="r"><code>cao$plotCellLoadings()</code></pre>
 <p><img src="figure/report_ms.Rmd/unnamed-chunk-5-1.png" width="672" style="display: block; margin: auto;" /></p>
+<p>
+<button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-unnamed-chunk-5-1">
+Past versions of unnamed-chunk-5-1.png
+</button>
+</p>
+<div id="fig-unnamed-chunk-5-1" class="collapse">
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/42b84b1af6356a649a89f10ab778c5341bf8b8c0/docs/figure/report_ms.Rmd/unnamed-chunk-5-1.png" target="_blank">42b84b1</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-08
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
 <pre class="r"><code>cao$plotContrastTree()</code></pre>
 <p><img src="figure/report_ms.Rmd/unnamed-chunk-6-1.png" width="672" style="display: block; margin: auto;" /></p>
+<p>
+<button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-unnamed-chunk-6-1">
+Past versions of unnamed-chunk-6-1.png
+</button>
+</p>
+<div id="fig-unnamed-chunk-6-1" class="collapse">
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/42b84b1af6356a649a89f10ab778c5341bf8b8c0/docs/figure/report_ms.Rmd/unnamed-chunk-6-1.png" target="_blank">42b84b1</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-08
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
 <p>We can see that most neuronal subtypes go to the left branch of the tree, while all glial and immune types go to the right.</p>
 </div>
 <div id="cluster-free" class="section level3">
@@ -630,18 +861,203 @@ lapply(c(&quot;coda&quot;, &quot;expression.shifts&quot;), function(sp) {
 <pre class="r"><code>g0 &lt;- cao$plotEmbedding(color.by=&#39;cell.groups&#39;)
 g0</code></pre>
 <p><img src="figure/report_ms.Rmd/unnamed-chunk-7-1.png" width="480" style="display: block; margin: auto;" /></p>
+<p>
+<button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-unnamed-chunk-7-1">
+Past versions of unnamed-chunk-7-1.png
+</button>
+</p>
+<div id="fig-unnamed-chunk-7-1" class="collapse">
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/42b84b1af6356a649a89f10ab778c5341bf8b8c0/docs/figure/report_ms.Rmd/unnamed-chunk-7-1.png" target="_blank">42b84b1</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-08
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
 <p>KDE-based:</p>
 <pre class="r"><code>cao$plotCellDensity(name=&#39;cell.density.kde&#39;) %&gt;% plot_grid(plotlist=., ncol=2)</code></pre>
 <p><img src="figure/report_ms.Rmd/unnamed-chunk-8-1.png" width="768" style="display: block; margin: auto;" /></p>
+<p>
+<button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-unnamed-chunk-8-1">
+Past versions of unnamed-chunk-8-1.png
+</button>
+</p>
+<div id="fig-unnamed-chunk-8-1" class="collapse">
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/42b84b1af6356a649a89f10ab778c5341bf8b8c0/docs/figure/report_ms.Rmd/unnamed-chunk-8-1.png" target="_blank">42b84b1</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-08
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
 <p>Differential cell density:</p>
 <pre class="r"><code>plot_grid(g0, cao$plotDiffCellDensity(name=&#39;cell.density.kde&#39;, legend.position=c(0, 1)), ncol=2)</code></pre>
 <p><img src="figure/report_ms.Rmd/unnamed-chunk-9-1.png" width="768" style="display: block; margin: auto;" /></p>
+<p>
+<button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-unnamed-chunk-9-1">
+Past versions of unnamed-chunk-9-1.png
+</button>
+</p>
+<div id="fig-unnamed-chunk-9-1" class="collapse">
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/42b84b1af6356a649a89f10ab778c5341bf8b8c0/docs/figure/report_ms.Rmd/unnamed-chunk-9-1.png" target="_blank">42b84b1</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-08
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
 <p>Graph-based:</p>
 <pre class="r"><code>cao$plotCellDensity(name=&#39;cell.density.graph&#39;) %&gt;% plot_grid(plotlist=., ncol=2)</code></pre>
 <p><img src="figure/report_ms.Rmd/unnamed-chunk-10-1.png" width="768" style="display: block; margin: auto;" /></p>
+<p>
+<button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-unnamed-chunk-10-1">
+Past versions of unnamed-chunk-10-1.png
+</button>
+</p>
+<div id="fig-unnamed-chunk-10-1" class="collapse">
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/42b84b1af6356a649a89f10ab778c5341bf8b8c0/docs/figure/report_ms.Rmd/unnamed-chunk-10-1.png" target="_blank">42b84b1</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-08
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
 <p>Differential cell density:</p>
 <pre class="r"><code>plot_grid(g0, cao$plotDiffCellDensity(name=&#39;cell.density.graph&#39;, legend.position=c(0, 1)), ncol=2)</code></pre>
 <p><img src="figure/report_ms.Rmd/unnamed-chunk-11-1.png" width="768" style="display: block; margin: auto;" /></p>
+<p>
+<button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-unnamed-chunk-11-1">
+Past versions of unnamed-chunk-11-1.png
+</button>
+</p>
+<div id="fig-unnamed-chunk-11-1" class="collapse">
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/42b84b1af6356a649a89f10ab778c5341bf8b8c0/docs/figure/report_ms.Rmd/unnamed-chunk-11-1.png" target="_blank">42b84b1</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-08
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
 <p>Here, graph-based method shows higher sensitivity, and its results mostly match to the cluster-based version. It also detects that in Astrocytes only one subtype is affected.</p>
 </div>
 </div>
@@ -652,12 +1068,47 @@ g0</code></pre>
 <p>All genes:</p>
 <pre class="r"><code>cao$plotExpressionShiftMagnitudes()</code></pre>
 <p><img src="figure/report_ms.Rmd/unnamed-chunk-12-1.png" width="672" style="display: block; margin: auto;" /></p>
+<p>
+<button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-unnamed-chunk-12-1">
+Past versions of unnamed-chunk-12-1.png
+</button>
+</p>
+<div id="fig-unnamed-chunk-12-1" class="collapse">
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/42b84b1af6356a649a89f10ab778c5341bf8b8c0/docs/figure/report_ms.Rmd/unnamed-chunk-12-1.png" target="_blank">42b84b1</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-08
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
 <p>No significant changes detected.</p>
 <p>Top DE genes:</p>
-<pre class="r"><code>cao$estimateExpressionShiftMagnitudes(n.permutations=5000, top.n.genes=500, n.pcs=8, 
-                                      min.samp.per.type=4, name=&#39;es.top.de&#39;, verbose=FALSE)</code></pre>
 <pre class="r"><code>cao$plotExpressionShiftMagnitudes(name=&#39;es.top.de&#39;)</code></pre>
-<p><img src="figure/report_ms.Rmd/unnamed-chunk-14-1.png" width="672" style="display: block; margin: auto;" /></p>
+<p><img src="figure/report_ms.Rmd/unnamed-chunk-13-1.png" width="672" style="display: block; margin: auto;" /></p>
 <p>Number of DE genes:</p>
 <pre class="r"><code>cao$estimateDEPerCellType(
   independent.filtering=TRUE, test=&#39;DESeq2.Wald&#39;, verbose=FALSE, resampling.method=&#39;fix.samples&#39;, 
@@ -667,18 +1118,92 @@ g0</code></pre>
   name=&quot;de.fix.samples&quot;, type=&quot;box&quot;, show.resampling.results=TRUE, jitter.alpha=0.5,
   show.jitter=TRUE, y.offset=1
 ) + scale_y_log10(labels=c(0, 10, 100), breaks=c(1, 11, 101), expand=c(0, 0), limits=c(1, 300))</code></pre>
-<p><img src="figure/report_ms.Rmd/unnamed-chunk-16-1.png" width="672" style="display: block; margin: auto;" /></p>
+<p><img src="figure/report_ms.Rmd/unnamed-chunk-15-1.png" width="672" style="display: block; margin: auto;" /></p>
 </div>
 <div id="cluster-free-1" class="section level3">
 <h3>Cluster-free</h3>
 <pre class="r"><code>cao$plotClusterFreeExpressionShifts(legend.position=c(0, 1), font.size=c(1, 2))</code></pre>
-<p><img src="figure/report_ms.Rmd/unnamed-chunk-17-1.png" width="768" style="display: block; margin: auto;" /></p>
+<p><img src="figure/report_ms.Rmd/unnamed-chunk-16-1.png" width="768" style="display: block; margin: auto;" /></p>
+<p>
+<button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-unnamed-chunk-16-1">
+Past versions of unnamed-chunk-16-1.png
+</button>
+</p>
+<div id="fig-unnamed-chunk-16-1" class="collapse">
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/42b84b1af6356a649a89f10ab778c5341bf8b8c0/docs/figure/report_ms.Rmd/unnamed-chunk-16-1.png" target="_blank">42b84b1</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-08
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
 </div>
 </div>
 <div id="functional-interpretation" class="section level2">
 <h2>Functional interpretation</h2>
 <pre class="r"><code>cao$plotVolcano(xlim=c(-3, 3), ylim=c(0, 3.5), lf.cutoff=1)</code></pre>
-<p><img src="figure/report_ms.Rmd/unnamed-chunk-18-1.png" width="960" style="display: block; margin: auto;" /></p>
+<p><img src="figure/report_ms.Rmd/unnamed-chunk-17-1.png" width="960" style="display: block; margin: auto;" /></p>
+<p>
+<button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-unnamed-chunk-17-1">
+Past versions of unnamed-chunk-17-1.png
+</button>
+</p>
+<div id="fig-unnamed-chunk-17-1" class="collapse">
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/42b84b1af6356a649a89f10ab778c5341bf8b8c0/docs/figure/report_ms.Rmd/unnamed-chunk-17-1.png" target="_blank">42b84b1</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-08
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
 <pre class="r"><code>cao$plotOntologyHeatmapCollapsed(name=&quot;GSEA&quot;, genes=&quot;all&quot;, n=30, clust.method=&quot;ward.D&quot;)</code></pre>
 <pre><code>Loading required package: DOSE</code></pre>
 <pre><code></code></pre>
@@ -686,13 +1211,50 @@ g0</code></pre>
 
 If you use DOSE in published research, please cite:
 Guangchuang Yu, Li-Gen Wang, Guang-Rong Yan, Qing-Yu He. DOSE: an R/Bioconductor package for Disease Ontology Semantic and Enrichment analysis. Bioinformatics 2015, 31(4):608-609</code></pre>
-<p><img src="figure/report_ms.Rmd/unnamed-chunk-19-1.png" width="768" style="display: block; margin: auto;" /></p>
+<p><img src="figure/report_ms.Rmd/unnamed-chunk-18-1.png" width="768" style="display: block; margin: auto;" /></p>
+<p>
+<button type="button" class="btn btn-default btn-xs btn-workflowr btn-workflowr-fig" data-toggle="collapse" data-target="#fig-unnamed-chunk-18-1">
+Past versions of unnamed-chunk-18-1.png
+</button>
+</p>
+<div id="fig-unnamed-chunk-18-1" class="collapse">
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/42b84b1af6356a649a89f10ab778c5341bf8b8c0/docs/figure/report_ms.Rmd/unnamed-chunk-18-1.png" target="_blank">42b84b1</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-08
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
 <pre class="r"><code>cao$estimateGenePrograms(method=&quot;leiden&quot;, z.adj=TRUE, smooth=FALSE)</code></pre>
 <pre class="r"><code>cao$plotGeneProgramScores(
   legend.position=c(0, 1), plot.na=FALSE, 
   adj.list=theme(legend.key.width=unit(8, &quot;pt&quot;), legend.key.height=unit(12, &quot;pt&quot;))
 )</code></pre>
-<p><img src="figure/report_ms.Rmd/unnamed-chunk-21-1.png" width="1152" style="display: block; margin: auto;" /></p>
+<p><img src="figure/report_ms.Rmd/unnamed-chunk-20-1.png" width="1152" style="display: block; margin: auto;" /></p>
 <br>
 <p>
 <button type="button" class="btn btn-default btn-workflowr btn-workflowr-sessioninfo" data-toggle="collapse" data-target="#workflowr-sessioninfo" style="display: block;">
@@ -751,7 +1313,7 @@ loaded via a namespace (and not attached):
  [70] stringr_1.4.0         fastmap_1.1.0         ggdendro_0.1.22      
  [73] yaml_2.2.1            knitr_1.36            bit64_4.0.5          
  [76] fs_1.5.0              purrr_0.3.4           nlme_3.1-149         
- [79] whisker_0.4           ash_1.0-15            ggrastr_1.0.0        
+ [79] whisker_0.4           ash_1.0-15            ggrastr_1.0.1        
  [82] R.oo_1.24.0           grr_0.9.5             DO.db_2.9            
  [85] compiler_4.0.3        beeswarm_0.4.0        png_0.1-7            
  [88] tibble_3.1.5          stringi_1.7.5         highr_0.9            

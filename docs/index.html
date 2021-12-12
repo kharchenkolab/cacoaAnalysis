@@ -13,7 +13,6 @@
 
 <title>Home</title>
 
-<script src="site_libs/header-attrs-2.11/header-attrs.js"></script>
 <script src="site_libs/jquery-3.6.0/jquery-3.6.0.min.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link href="site_libs/bootstrap-3.3.5/css/cosmo.min.css" rel="stylesheet" />
@@ -40,8 +39,6 @@ div.section {
   padding-top: 12px;
 }
 </style>
-
-
 
 <style type="text/css">
   code{white-space: pre-wrap;}
@@ -297,7 +294,7 @@ $(document).ready(function () {
 <div class="tab-content">
 <div id="summary" class="tab-pane fade in active">
 <p>
-<strong>Last updated:</strong> 2021-12-10
+<strong>Last updated:</strong> 2021-12-12
 </p>
 <p>
 <strong>Checks:</strong> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> 2 <span class="glyphicon glyphicon-exclamation-sign text-danger" aria-hidden="true"></span> 0
@@ -328,16 +325,16 @@ This reproducible <a href="http://rmarkdown.rstudio.com">R Markdown</a> analysis
 <div class="panel panel-default">
 <div class="panel-heading">
 <p class="panel-title">
-<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongRepositoryversionstrongahrefhttpsgithubcomkharchenkolabcacoaAnalysistreee8ad9017b70a58c3fd238794f609e6082ccb49e2targetblanke8ad901a"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Repository version:</strong> <a href="https://github.com/kharchenkolab/cacoaAnalysis/tree/e8ad9017b70a58c3fd238794f609e6082ccb49e2" target="_blank">e8ad901</a> </a>
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongRepositoryversionstrongahrefhttpsgithubcomkharchenkolabcacoaAnalysistree82fafb757d4dd00820165f5c1707e504e866dfa2targetblank82fafb7a"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Repository version:</strong> <a href="https://github.com/kharchenkolab/cacoaAnalysis/tree/82fafb757d4dd00820165f5c1707e504e866dfa2" target="_blank">82fafb7</a> </a>
 </p>
 </div>
-<div id="strongRepositoryversionstrongahrefhttpsgithubcomkharchenkolabcacoaAnalysistreee8ad9017b70a58c3fd238794f609e6082ccb49e2targetblanke8ad901a" class="panel-collapse collapse">
+<div id="strongRepositoryversionstrongahrefhttpsgithubcomkharchenkolabcacoaAnalysistree82fafb757d4dd00820165f5c1707e504e866dfa2targetblank82fafb7a" class="panel-collapse collapse">
 <div class="panel-body">
 <p>
 Great! You are using Git for version control. Tracking code development and connecting the code version to the results is critical for reproducibility.
 </p>
 <p>
-The results in this page were generated with repository version <a href="https://github.com/kharchenkolab/cacoaAnalysis/tree/e8ad9017b70a58c3fd238794f609e6082ccb49e2" target="_blank">e8ad901</a>. See the <em>Past versions</em> tab to see a history of the changes made to the R Markdown and HTML files.
+The results in this page were generated with repository version <a href="https://github.com/kharchenkolab/cacoaAnalysis/tree/82fafb757d4dd00820165f5c1707e504e866dfa2" target="_blank">82fafb7</a>. See the <em>Past versions</em> tab to see a history of the changes made to the R Markdown and HTML files.
 </p>
 <p>
 Note that you need to be careful to ensure that all relevant files for the analysis have been committed to Git prior to generating the results (you can use <code>wflow_publish</code> or <code>wflow_git_commit</code>). workflowr only checks the R Markdown file, but you know if there are other scripts or data files that it depends on. Below is the status of the Git repository when the results were generated:
@@ -349,6 +346,8 @@ Ignored files:
     Ignored:    analysis/.Rhistory
     Ignored:    analysis/de_figure_ep.nb.html
     Ignored:    analysis/figure_compositional.nb.html
+    Ignored:    analysis/figure_compositional_cf.nb.html
+    Ignored:    analysis/figure_expression_shifts.nb.html
     Ignored:    analysis/figure_heterogeneity.nb.html
     Ignored:    analysis/prepare_cacoa_results.nb.html
     Ignored:    analysis/preprocess.nb.html
@@ -376,18 +375,17 @@ Untracked files:
     Untracked:  analysis/cluster_free_de_pf.Rmd
     Untracked:  analysis/de_figure_ep.Rmd
     Untracked:  analysis/fig_cluster_free_de.Rmd
-    Untracked:  analysis/figure_compositional.Rmd
+    Untracked:  analysis/figure_expression_shifts.Rmd
     Untracked:  analysis/figure_heterogeneity.Rmd
     Untracked:  analysis/report_template.Rmd
     Untracked:  analysis/simulation_note.Rmd
 
 Unstaged changes:
-    Modified:   DESCRIPTION
-    Modified:   R/helpers.R
+    Modified:   analysis/figure_compositional_cf.Rmd
 
 </code></pre>
 <p>
-Note that any generated files, e.g. HTML, png, CSS, etc., are not included in this status report because it is ok for generated content to have uncommitted changes.
+Note that any generated files, e.g. HTML, png, CSS, etc., are not included in this status report because it is ok for generated content to have uncommitted changes.
 </p>
 </div>
 </div>
@@ -398,7 +396,7 @@ Note that any generated files, e.g. HTML, png, CSS, etc., are not included in t
 <div id="versions" class="tab-pane fade">
 
 <p>
-These are the previous versions of the repository in which changes were made to the R Markdown (<code>analysis/index.Rmd</code>) and HTML (<code>docs/index.html</code>) files. If you’ve configured a remote Git repository (see <code>?wflow_git_remote</code>), click on the hyperlinks in the table below to view the files as they were in that past version.
+These are the previous versions of the repository in which changes were made to the R Markdown (<code>analysis/index.Rmd</code>) and HTML (<code>docs/index.html</code>) files. If you've configured a remote Git repository (see <code>?wflow_git_remote</code>), click on the hyperlinks in the table below to view the files as they were in that past version.
 </p>
 <div class="table-responsive">
 <table class="table table-condensed table-hover">
@@ -422,6 +420,23 @@ Message
 </tr>
 </thead>
 <tbody>
+<tr>
+<td>
+html
+</td>
+<td>
+<a href="https://rawcdn.githack.com/kharchenkolab/cacoaAnalysis/80cd4439d6d68c53bceeded2783aa518c42e213f/docs/index.html" target="_blank">80cd443</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-10
+</td>
+<td>
+Updated functions; rebuilt index
+</td>
+</tr>
 <tr>
 <td>
 Rmd
@@ -631,7 +646,7 @@ Start workflowr project.
 <div id="simulations" class="section level3">
 <h3>Simulations</h3>
 <ul>
-<li>…</li>
+<li>...</li>
 <li><a href="./simulation_distances.html">Different normalization types</a></li>
 </ul>
 </div>
@@ -660,8 +675,6 @@ footer is added to webpages before the MathJax javascript. -->
     "HTML-CSS": { availableFonts: ["TeX"] }
   });
 </script>
-
-
 
 
 
