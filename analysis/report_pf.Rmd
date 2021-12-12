@@ -41,7 +41,8 @@ sample_meta <- read_csv(DataPath("PF/sample_metadata.csv")) %>% head(-2) %>%
     Age=as.integer(Age),
     Ethnicity=sapply(strsplit(Ethnicity, " "), `[[`, 1)
   ) %>% arrange(Sample_Name) %>% head(-1) %>% 
-  as.data.frame() %>% set_rownames(.$Sample_Name) %>% .[names(cao$data.object$samples),]
+  as.data.frame() %>% set_rownames(.$Sample_Name) %>% .[names(cao$data.object$samples),] %>% 
+  lapply(setNames, .$Sample_Name)
 ```
 
 ## Dependency on metadata
@@ -67,7 +68,7 @@ lapply(c("coda", "expression.shifts"), function(sp) {
   plot_grid(plotlist=., ncol=2, labels=c("CoDA", "Expression"), hjust=0, label_x=0.2, label_y=0.98)
 ```
 
-```{r}
+```{r, fig.width=4, fig.height=4, warning=FALSE, message=FALSE}
 cao$test.results$md.expression.shifts$padjust %>% {names(.)[. < 0.05]} %>% lapply(function(n) {
   cao$plotSampleDistances(space='expression', legend.position=c(0, 1), sample.colors=sample_meta[[n]], 
                           color.title=n)
