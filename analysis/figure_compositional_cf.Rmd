@@ -25,7 +25,7 @@ library(dataorganizer)
 p_theme <- theme(
   axis.text=element_text(size=8), axis.title=element_text(size=10),
   legend.title=element_text(size=10), legend.text=element_text(size=8), legend.key.width=unit(12, "pt"),
-  plot.margin=margin(b=2, t=2), legend.background=element_blank()
+  legend.background=element_blank()
 )
 
 theme_set(theme_bw() + p_theme)
@@ -36,20 +36,18 @@ rast <- function(...) rasterise(..., dev="ragg_png")
 devtools::load_all()
 ```
 
-### Main figure
-
-### PF
+## PF
 
 ```{r}
 cao_pf <- DataPath("PF/cao.rds") %>% readr::read_rds() %>% Cacoa$new()
 cao_pf$plot.theme %<>% {. + p_theme}
 ```
 
-```{r, fig.width=8, fig.height=2}
-# leg_theme <- theme(legend.key.width=unit(10, "pt"), legend.text=element_text(size=10), 
-#                    legend.background=element_blank(), legend.key.height=unit(14, "pt"))
+```{r, fig.width=2.5, fig.height=2.5, message=FALSE, warning=FALSE}
 leg_theme <- theme(legend.key.height=unit(10, "pt"), legend.text=element_text(size=9), 
                    legend.background=element_blank())
+leg_theme_small <- leg_theme + theme(legend.key.width=unit(6, "pt"), legend.key.height=unit(6, "pt"))
+gene_lab_size <- 12
 
 p_lims <- list("Endothelial Cells", c("Macrophages", "cDCs", "Monocytes")) %>% lapply(function(ct) {
   getCellTypeEmbeddingLimits(cao_pf$embedding, cell.groups=cao_pf$cell.groups, groups.to.plot=ct, quant=0.004)
@@ -60,28 +58,39 @@ p_genes <- c("SPP1", "DKK2", "COL15A1", "CPE")
 gg_markers <- mapply(function(g, pl) {
   p.cols <- cao_pf$cache$joint.count.matrix.norm[,g] %>% pmin(., quantile(., 0.995))
   cao_pf$data.object$plotGraph(colors=p.cols, size=0.2, alpha=0.1, show.legend=TRUE, 
-                               legend.position=c(1, 1), legend.title="Expr.") +
-    leg_theme + lims(x=pl$x, y=pl$y) + theme(legend.key.width=unit(8, "pt"), legend.key.height=unit(9, "pt"))
+                               legend.position=c(1, 0), legend.title="Expr.") +
+    leg_theme_small + lims(x=pl$x, y=pl$y) +
+    scale_color_gradientn(colors=cacoa:::dark.red.palette(100), 
+                          breaks=seq(0, signif(max(p.cols) / 3, 1) * 3, length.out=4)) +
+    theme(panel.grid=element_blank())
 }, p_genes, list(p_lims[[2]], p_lims[[1]], p_lims[[1]], p_lims[[1]]), SIMPLIFY=FALSE)
 
 gg_markers %>%
-  plot_grid(plotlist=., labels=p_genes, nrow=1, label_fontface="italic", label_x=0.02,
-            hjust=0, label_size=16)
+  plot_grid(plotlist=., labels=p_genes, nrow=2, label_fontface="italic", label_x=0.05,
+            hjust=0, label_size=gene_lab_size)
 ```
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 cao_pf$estimateDiffCellDensity(type='permutation', n.permutations=1000, verbose=TRUE, 
                                n.cores=45, name='cell.density.kde')
 ```
 
-```{r}
+```{r, fig.width=5, fig.height=2.5, message=FALSE, warning=FALSE}
 gg_pf_emb <- cao_pf$plotEmbedding(color.by='cell.groups', font.size=c(2, 3.5), size=0.25, alpha=0.1) +
   theme(panel.grid=element_blank())
 
 ggs_pf_dens <- cao_pf$plotCellDensity(
-  add.points=TRUE, show.grid=TRUE, show.cell.groups=FALSE, legend.title="Density",
+  add.points=FALSE, show.grid=TRUE, show.cell.groups=FALSE, legend.title="Density",
   name='cell.density.kde'
 ) %>% lapply(`+`, theme(plot.title=element_blank()))
+
+c_pal <- c("#FFFFFF", brewerPalette("YlOrRd", rev=FALSE)(9)) %>% colorRampPalette()
+pf_dens_col <- sccore::val2ggcol(ggs_pf_dens[[1]]$data$z, palette=c_pal, return.fill=TRUE, 
+                                 color.range=c(0, 1e-4), breaks=seq(0, 1.2e-4, length.out=4))
+
+ggs_pf_dens %<>% lapply(`+`, pf_dens_col)
+ggs_pf_dens[[1]] %<>% {. + theme_legend_position(c(0, 0)) + leg_theme_small + 
+    theme(legend.text=element_text(size=8))}
 
 gg_pf_diff <- cao_pf$plotDiffCellDensity(adjust.pvalues=FALSE, legend.position=c(0, 1), 
                                          color.range=c("1%", "99%"), name='cell.density.kde',
@@ -92,49 +101,25 @@ gg_pf_diff_adj <- cao_pf$plotDiffCellDensity(adjust.pvalues=TRUE, legend.positio
 gg_prop_change <- cao_pf$plotDiffCellDensity(type="subtract", legend.position=c(0, 1), 
                                              color.range=c("1%", "99%"), name='cell.density.kde') +
   leg_theme
+
+plot_grid(plotlist=rast(ggs_pf_dens), ncol=2)
 ```
 
-```{r, fig.width=4, fig.height=4, message=FALSE, warning=FALSE}
-# ggs_pf_dens[[1]] %<>% {. + theme_legend_position(c(0, 1)) + leg_theme}
-# 
-# gg_pf_emb
-# lapply(ggs_pf_dens, `+`, theme(plot.margin=margin()))
-# gg_markers
-# gg_prop_change + leg_theme
-# gg_pf_diff + leg_theme
-# gg_pf_diff_adj + leg_theme
-```
-
-```{r, fig.width=6, fig.height=5.5, message=FALSE, warning=FALSE}
-ggs_pf_dens[[1]] %<>% {. + theme_legend_position(c(0, 1)) + leg_theme}
-plot_grid(
-  plot_grid(
-    gg_pf_emb + theme(plot.margin=margin()),
-    plot_grid(
-      plotlist=lapply(ggs_pf_dens, `+`, theme(plot.margin=margin())),
-      ncol=1
-    ),
-    plot_grid(
-      plotlist=gg_markers, labels=p_genes, label_fontface="italic", label_x=0.02, 
-      hjust=0, label_size=16, ncol=1
-    ),
-    ncol=3, rel_widths=c(3.5, 2, 1.2)
-  ),
-  plot_grid(
-    gg_prop_change + leg_theme,
-    gg_pf_diff + leg_theme,
-    gg_pf_diff_adj + leg_theme,
-    nrow=1
-  ),
-  nrow=2, rel_heights=c(1.6, 1)
-)
-```
-
-### MS
+## MS
 
 ```{r}
 cao_ms <- DataPath("MS/cao.rds") %>% readr::read_rds() %>% Cacoa$new()
 cao_ms$plot.theme %<>% {. + p_theme}
+```
+
+```{r}
+gg_ms_emb <- cao_ms$plotEmbedding(color.by='cell.groups', font.size=c(2.5, 4.5), size=0.25, alpha=0.1) +
+  theme(panel.grid=element_blank())
+
+gg_ms_diff_adj <- cao_ms$plotDiffCellDensity(
+  adjust.pvalues=TRUE, legend.position=c(0, 0), min.z=0.5, size=0.1, alpha=0.1,
+  name="cell.density.graph"
+) + leg_theme
 ```
 
 ```{r, fig.width=6, fig.height=2, message=FALSE, warning=FALSE}
@@ -142,22 +127,25 @@ p_lims_ms <- getCellTypeEmbeddingLimits(
   cao_ms$embedding, cell.groups=cao_ms$cell.groups, groups.to.plot="Astrocytes", quant=0.01
 )
 
-p_genes <- c("GFAP", "CD44", "TNC")
+p_genes_ms <- c("GFAP", "CD44", "TNC")
+astro_lims <- lims(x=p_lims_ms$x, y=p_lims_ms$y)
+col_range <- c(0, 0.8)
 
-gg_ms_markers <- lapply(p_genes, function(g) {
+gg_ms_markers <- lapply(p_genes_ms, function(g) {
   p.cols <- cao_ms$cache$joint.count.matrix.norm[,g]# %>% pmin(., quantile(., 0.995))
-  cao_ms$data.object$plotGraph(colors=p.cols, size=0.2, alpha=0.1, show.legend=TRUE, 
-                               legend.position=c(1, 0), legend.title="Expr.", color.range=c(0, 0.8)) +
-    leg_theme + lims(x=p_lims_ms$x, y=p_lims_ms$y)
+  cao_ms$plotEmbedding(colors=p.cols, size=0.2, alpha=0.1, show.legend=TRUE, 
+                       legend.position=c(1, 0), legend.title="Expr.", color.range=col_range,
+                       palette=cacoa:::dark.red.palette) + astro_lims
 })
 
 gg_ms_markers[2:3] %<>% lapply(`+`, theme(legend.position="none"))
 
-plot_grid(plotlist=gg_ms_markers, labels=p_genes, nrow=1, label_fontface="italic", label_x=0.02,
-          hjust=0, label_size=16)
-```
+adj_list <- list(astro_lims, theme(plot.title=element_blank()))
+gg_shisa_markers <- cao_ms$plotGeneExpressionComparison(
+  "SHISA9", plots="expression", build.panel=FALSE, size=0.2, alpha=0.5, 
+  legend.position="none", adj.list=adj_list, max.expr=col_range[2]
+)
 
-```{r, fig.width=2, fig.height=2, message=FALSE, warning=FALSE}
 cd44_ast <- cao_ms$cell.groups %>% {names(.)[. == "Astrocytes"]} %>% 
   .[cao_ms$test.results$cell.density.graph$diff$wilcox$adj[.] > 1]
 
@@ -167,7 +155,7 @@ cm_agg <- cao_ms$cache$joint.count.matrix[cd44_ast,] %>%
 p_df <- (cm_agg[,"SHISA9"] / rowSums(cm_agg)) %>% 
   .[!is.na(.)] %>% {tibble(expr=1000 * ., sg=cao_ms$sample.groups[names(.)], type=names(.))}
 
-gg_shisa <- ggplot(p_df, aes(x=sg, y=expr, fill=sg)) +
+gg_shisa_box <- ggplot(p_df, aes(x=sg, y=expr, fill=sg)) +
   geom_boxplot(outlier.size=0) +
   ggbeeswarm::geom_quasirandom(size=1) +
   ylab("SHISA9 expr.") +
@@ -175,77 +163,60 @@ gg_shisa <- ggplot(p_df, aes(x=sg, y=expr, fill=sg)) +
   theme(legend.position="none", axis.title.x=element_blank(), panel.grid.major.x=element_blank(),
         panel.grid.minor=element_blank())
 
-gg_shisa
+gg_mark_list <- c(
+  gg_ms_markers, 
+  gg_shisa_markers[c(2, 1)], 
+  list(gg_shisa_box)
+  # list(gg_shisa_box + theme(plot.margin=margin(l=3)))
+) %>% lapply(rast) %>% lapply(`+`, theme(panel.grid=element_blank()))
+
+gg_mark_list[[1]] %<>% {. + leg_theme_small}
 ```
 
-```{r, fig.width=8.5, fig.height=5, message=FALSE, warning=FALSE}
-gg_ms_emb <- cao_ms$plotEmbedding(color.by='cell.groups', font.size=c(2.5, 4.5), size=0.25, alpha=0.1) +
-  theme(panel.grid=element_blank())
+## Compile figure
 
-gg_ms_diff <- cao_ms$plotDiffCellDensity(
-  type="subtract", legend.position=c(0, 0), size=0.1, alpha=0.1,
-  color.range=c("1%", "99%"), name="cell.density.graph"
-) + guides(color=guide_colorbar(title="Prop.\nchange"))
-
-gg_ms_diff_adj <- cao_ms$plotDiffCellDensity(
-  adjust.pvalues=TRUE, legend.position=c(0, 0), min.z=0.5, size=0.1, alpha=0.1,
-  name="cell.density.graph"
+```{r, fig.width=8.5, fig.height=8.25, message=FALSE, warning=FALSE}
+theme_nm <- theme(
+  plot.margin=margin(), panel.border=element_rect(size=0.25)
 )
-```
 
-```{r, fig.width=8.5, fig.height=3.5, message=FALSE, warning=FALSE}
-gg_mark_list <- c(gg_ms_markers, list(gg_shisa + theme(plot.margin=margin(l=3)))) %>% 
-  lapply(rast)
-
-gg_mark_list[[1]] %<>% {. + theme(legend.key.height=unit(7, "pt"), legend.text=element_text(size=9))}
-
+scale_row <- 0.97
+scale_inner <- 0.99
 plot_grid(
-  rast(gg_ms_emb) + theme(plot.margin=margin(b=0, t=2, r=1, l=0)),
   plot_grid(
+    ggplot() + theme_nothing(),
+    rast(gg_pf_emb, dpi=75) + theme_nm,
     plot_grid(
-      rast(gg_ms_diff) + leg_theme,
-      rast(gg_ms_diff_adj) + leg_theme,
-      nrow=1
+      plotlist=rast(lapply(ggs_pf_dens, `+`, theme_nm)), labels=names(ggs_pf_dens),
+      label_fontface="italic", label_x=0.05, hjust=0, label_size=gene_lab_size,
+      ncol=1, scale=scale_inner
     ),
-    plot_grid(
-      plotlist=gg_mark_list, 
-      labels=p_genes, nrow=1, label_fontface="italic", label_x=0.02, hjust=0, label_size=16
-    ),
-    nrow=2, rel_heights=c(6, 3)
+    ncol=3, rel_widths=c(1.5, 2, 1), scale=scale_row
   ),
-  nrow=1, rel_widths=c(2.1, 3)
+  plot_grid(
+    rast(gg_prop_change) + leg_theme + theme_nm + theme(plot.margin=margin(l=2)),
+    rast(gg_pf_diff) + leg_theme + theme_nm,
+    rast(gg_pf_diff_adj) + leg_theme + theme_nm,
+    plot_grid(
+      plotlist=rast(lapply(gg_markers, `+`, theme_nm)), labels=p_genes,
+      label_fontface="italic", label_x=0.05, hjust=0, label_size=gene_lab_size, ncol=2,
+      scale=scale_inner
+    ),
+    nrow=1, scale=scale_row
+  ),
+  plot_grid(
+    rast(gg_ms_emb) + theme_nm,
+    rast(gg_ms_diff_adj) + theme_nm,
+    plot_grid(
+      plotlist=rast(lapply(gg_mark_list, `+`, theme_nm)),
+      labels=c(p_genes_ms, "SHISA9, CNT", "SHISA9, MS"),
+      label_fontface="italic", label_x=0.05, hjust=0, label_size=gene_lab_size,
+      nrow=2, scale=scale_inner
+    ),
+    nrow=1, rel_widths=c(1, 1, 1.5), scale=scale_row
+  ),
+  nrow=3, rel_heights=c(1.7, 1, 1.1), scale=0.98
 )
 
-ggsave(figurePath("2_composition_cf_ms.pdf"))
-```
-
-
-## Supp. figure
-
-```{r, fig.width=8, fig.height=8}
-ggs_pf_dens <- cao_pf$plotCellDensity(
-  add.points=TRUE, show.grid=TRUE, show.cell.groups=FALSE, size=0.1, alpha=0.1,
-  name="cell.density.graph", legend.title="Density"
-) %>% lapply(`+`, theme(plot.title=element_blank()))
-
-gg_pf_diff <- cao_pf$plotDiffCellDensity(
-  adjust.pvalues=FALSE, legend.position=c(0, 1), size=0.1, alpha=0.1,
-  color.range=c("1%", "99%"), name="cell.density.graph", type="wilcox"
-)
-
-gg_pf_diff_adj <- cao_pf$plotDiffCellDensity(
-  adjust.pvalues=TRUE, legend.position=c(0, 1), min.z=0.5, size=0.1, alpha=0.1,
-  name="cell.density.graph", type="wilcox",
-)
-
-# ggs_pf_dens[[1]] %<>% 
-#   cacoa:::transferLabelLayer(cao_pf$plotEmbedding(groups=p_cell_groups), font.size=c(3, 5))
-
-plot_grid(
-  ggs_pf_dens[[1]] + theme_legend_position(c(0, 1)) + leg_theme,
-  ggs_pf_dens[[2]],
-  gg_pf_diff + leg_theme,
-  gg_pf_diff_adj + leg_theme,
-  nrow=2, labels=names(ggs_pf_dens), label_x=0.98, hjust=1
-)
+ggsave(figurePath("2_composition_cf.pdf"))
 ```
