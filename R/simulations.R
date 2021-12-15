@@ -1,19 +1,24 @@
-#' @import parallel magrittr dplyr
+#' @import parallel magrittr dplyr Matrix
 NULL
 
 ## Prepare data
 
-prepareSCEFromConos <- function(con, ref.group, subtypes=unique(con$misc$cell.type)) {
-  cm <- con$getJointCountMatrix(raw=TRUE) %>% t()
-  meta.df <- con$misc$cell.type %>% .[. %in% subtypes] %>%
+prepareSCEForSimulaton <- function(cm, sample.per.cell, ref.group, cell.groups, sample.groups,
+                                   subgroups=unique(cell.groups)) {
+  meta.df <- cell.groups %>% .[. %in% subgroups] %>%
     data.frame(cluster_id=as.factor(.)) %>%
-    cbind(sample_id=con$getDatasetPerCell()[rownames(.)]) %>%
-    cbind(group_id=as.factor(con$misc$sample.groups[as.character(.$sample_id)]))
+    cbind(sample_id=sample.per.cell[rownames(.)]) %>%
+    cbind(group_id=as.factor(sample.groups[as.character(.$sample_id)]))
 
   sce <- list(counts=cm[,rownames(meta.df)]) %>%
     SingleCellExperiment::SingleCellExperiment(colData=meta.df)
 
-  return(list(raw=sce, prep=muscat::prepSim(sce, group_keep=ref.group)))
+  prep <- muscat::prepSim(sce, group_keep=ref.group)
+  offset <- prep@colData$offset
+  prep@colData <- sce@colData[rownames(prep@colData),]
+  prep@colData$offset <- offset
+
+  return(list(raw=sce, prep=prep))
 }
 
 cacoaFromSim <- function(sim, n.cores, ref.level="A", target.level=setdiff(unique(sim$sample.groups), ref.level)) {
@@ -38,7 +43,8 @@ convertSCEToSim <- function(sce, params, cluster.id=paste(params, collapse="_"),
   params <- params[!sapply(params, is.null)]
   res <- list(
     cm=cm, sample.groups=sample.groups, cell.groups=cell.groups,
-    sample.per.cell=sample.per.cell, params=as_tibble(params)
+    sample.per.cell=sample.per.cell, params=as_tibble(params),
+    gene.info=sce@metadata$gene_info
   )
 
   if (store.sce) {
@@ -108,17 +114,23 @@ generateSimData <- function(sce, ns=length(unique(sce$sample_id)), nc=300, de.fr
 }
 
 joinSims <- function(sims) {
+  sims <- unname(sims)
   params <- lapply(sims, `[[`, "params") %>% do.call(rbind, .)
+  gene.info <- lapply(sims, function(sm) {
+    if ("cluster.id" %in% colnames(sm$gene.info)) sm$gene.info else cbind(sm$gene.info, cluster.id=sm$params$cluster.id)
+  }) %>% do.call(rbind, .)
   sces <- NULL
   if (!is.null(sims[[1]]$sce)) {
     sces <- lapply(sims, `[[`, "sce")
     sims[[1]]$sce <- NULL
   }
 
-  res <- names(sims[[1]]) %>% setNames(., .) %>% lapply(function(n) do.call(c, lapply(sims, `[[`, n)))
+  res <- names(sims[[1]]) %>% setdiff(c("params", "gene.info")) %>%
+    setNames(., .) %>% lapply(function(n) do.call(c, lapply(sims, `[[`, n)))
   res$cm %<>% sccore::mergeCountMatrices()
   res$sample.groups %<>% split(names(.)) %>% sapply(unique)
   res$params <- params
+  res$gene.info <- gene.info
   res$sce <- sces
 
   return(res)
@@ -252,22 +264,22 @@ prepareSensitivityDf <- function(metric.res, params, covar.name="lfc", trim=0.1)
 }
 
 plotSensitivityComparison <- function(sens.df, y=c("distance", "pvalue"), yline=NULL, color.title="LFC",
-                                      plot.theme=theme_get(), alpha=0.75, size=2) {
+                                      plot.theme=theme_get(), alpha=0.75, size=2, jitter.width=0.005) {
   y <- match.arg(y)
   if (y == "distance") {
-    p.aes <- aes(x=de.frac, y=value, color=covar, shape=ns, fill=as.factor(rep))
+    p.aes <- aes(x=de.frac, y=value, color=covar, shape=ns)
     y.lab <- "Expression distance"
     leg.pos <- c(0, 1)
   } else {
-    p.aes <- aes(x=de.frac, y=-log10(pvalue), color=covar, shape=ns, fill=as.factor(rep))
+    p.aes <- aes(x=de.frac, y=-log10(pvalue), color=covar, shape=ns)
     y.lab <- "-log10(p-value)"
     leg.pos <- c(1, 0)
     yline <- -log10(0.05)
   }
   gg <- ggplot(sens.df, p.aes) +
-    geom_line(aes(linetype=ns), size=size, alpha=alpha) +
-    geom_point(size=size*1.5, alpha=alpha) +
-    plot.theme + theme_legend_position(leg.pos) +
+    geom_smooth(aes(linetype=ns), size=size, alpha=alpha, se=FALSE) +
+    ggbeeswarm::geom_quasirandom(aes(fill=as.factor(rep)), size=size*1.5, alpha=alpha, width=jitter.width) +
+    plot.theme + cacoa:::theme_legend_position(leg.pos) +
     labs(x="DE fraction", y=y.lab) +
     theme(legend.background=element_blank()) +
     guides(color=guide_legend(title=color.title), fill=guide_none())
@@ -280,12 +292,32 @@ plotSensitivityComparison <- function(sens.df, y=c("distance", "pvalue"), yline=
   return(gg)
 }
 
-plotSensitivityComparisonPanel <- function(sens.df, yline=NULL, ...) {
+plotSensitivityComparisonPanel <- function(sens.df, yline=NULL, adj.list=NULL, ...) {
   cowplot::plot_grid(
-    plotSensitivityComparison(sens.df, y="distance", yline=yline, ...),
-    plotSensitivityComparison(sens.df, y="pvalue", ...),
+    plotSensitivityComparison(sens.df, y="distance", yline=yline, ...) + adj.list,
+    plotSensitivityComparison(sens.df, y="pvalue", ...) + adj.list,
     ncol=2
   )
+}
+
+plotExpressionShiftResults <- function(dists.per.type, pvalues, params, ns.col=NULL, trim=0.1, covar.name="lfc", ...) {
+  p.df <- list(dist.df=prepareExpressionDistDf(dists.per.type, params=params), pvalues=pvalues) %>%
+    prepareSensitivityDf(params=params, covar.name=covar.name, trim=trim)
+
+  if (!is.null(ns.col)) {
+    p.df$ns <- p.df[[ns.col]]
+  }
+
+  if (is.null(pvalues))
+    return(plotSensitivityComparison(p.df, y="distance", yline=0.0, color.title=covar.name, ...))
+
+  return(plotSensitivityComparisonPanel(p.df, yline=0.0, color.title=covar.name, ...))
+}
+
+extractRawDistances <- function(p.dist.info, sample.groups) {
+  lapply(p.dist.info, function(dm) {
+    sample.groups %>% {outer(.[rownames(dm)], .[colnames(dm)], '!=')} %>% dm[.]
+  })
 }
 
 ### Simulating pairwise distances
@@ -328,13 +360,125 @@ generateDistanceMatrixSimulations <- function(n.samples, mean.offset=0, std.cnt=
   }) %>% do.call(rbind, .)
 }
 
-plotSimulatedDistances <- function(sim.df, x.var, x.lab=x.var) {
-  ggplot(sim_df, aes_string(x=x.var, y="dist", fill="norm.type")) +
+generateConsForClustFree <- function(sim, k=30, k.self=5, k.self.weight=0.5, n.cores=30, verbose=TRUE, ncomps=30,
+                                     metric="angular") {
+  cms.per.type.per.samp <- sim$cell.groups[colnames(sim$cm)] %>%
+    {split(names(.), .)} %>%
+    sccore::plapply(function(cg.ids) {
+      cm.cg <- sim$cm[,cg.ids]
+      sim$sample.per.cell[colnames(cm.cg)] %>% droplevels() %>% {split(names(.), .)} %>%
+        lapply(function(sg.ids) cm.cg[,sg.ids])
+    }, n.cores=1, progress=verbose)
+
+  p2s.per.type <- cms.per.type.per.samp %>%
+    sccore::plapply(lapply, createPagoda, progress=verbose, n.cores=n.cores)
+
+  if ((length(p2s.per.type) == 2) & ("value" %in% names(p2s.per.type))) {
+    p2s.per.type <- p2s.per.type$value
+  }
+
+  con.per.type <- sccore::plapply(p2s.per.type, function(p2s) {
+    con <- conos::Conos$new(p2s, n.cores=1, verbose=FALSE)
+    con$buildGraph(k=k, k.self=k.self, k.self.weight=k.self.weight, verbose=FALSE, ncomps=ncomps, metric=metric)
+    con
+  }, progress=verbose, n.cores=n.cores)
+
+  return(list(p2s.per.type=p2s.per.type, con.per.type=con.per.type, sim=sim))
+}
+
+generateCacoaFromConsForClustFree <- function(con.per.type, sim, n.cores=1) {
+  sccore::plapply(con.per.type, function(con) {
+    c.ids <- names(con$getDatasetPerCell())
+    co <- cacoa::Cacoa$new(
+      con, sample.groups=sim$sample.groups[names(con$samples)],
+      cell.groups=sim$cell.groups[c.ids], sample.per.cell=droplevels(sim$sample.per.cell[c.ids]),
+      ref.level='A', target.level='B', n.cores=n.cores, embedding=NULL
+    )
+
+    co$estimateClusterFreeExpressionShifts(gene.selection="expression", verbose=FALSE)
+    co
+  }, n.cores=1, progress=TRUE)
+}
+
+plotClusterFreeShiftSimulations <- function(cao.per.type, params, x.col, adj.list=list()) {
+  mapply(function(n, yl) {
+    p.df <- cao.per.type %>%
+      sapply(function(cao) median(cao$test.results$cluster.free.expr.shifts[[n]], na.rm=TRUE)) %>%
+      prepareExpressionDistDf(params=params) %>%
+      inner_join(params, c("Type"="cluster.id")) %>%
+      mutate(ns=factor(paste0(ns), levels=paste0(sort(unique(ns)))))
+    p.df[[x.col]] %<>% factor(levels=sort(unique(.)))
+
+    yline <- if (n == "z_scores") qnorm(0.95) else 0
+    ggplot(p.df, aes_string(x=x.col, y='value')) +
+      geom_boxplot(outlier.alpha=0, notch=TRUE) +
+      ggbeeswarm::geom_quasirandom(size=0.25) +
+      geom_hline(yintercept=yline) +
+      ylab(yl) +
+      cacoa:::theme_legend_position(c(0, 1)) + theme(legend.background=element_blank()) +
+      guides(fill=guide_none()) +
+      adj.list
+  }, c("shifts", "z_scores"), c("Expression distance", "Z-score"), SIMPLIFY=FALSE) %>%
+    cowplot::plot_grid(plotlist=., nrow=1)
+}
+
+## Boxplot functions
+
+prepareExpressionShiftSimDf <- function(es.res, params=sims$params, sample.groups=sims$sample.groups, sims=NULL) {
+  raw.dists <- es.res$p.dist.info %>% extractRawDistances(sample.groups) %>% sapply(median)
+  df <- es.res$dists.per.type %>% sapply(median) %>%
+    {tibble(Type=names(.), NormDist=., RawDist=raw.dists[names(.)], pvalue=es.res$pvalues[names(.)])} %>%
+    inner_join(params, by=c("Type"="cluster.id"))
+  return(df)
+}
+
+plotExpressionShiftSimDf <- function(p.df, x.col, norm.dist=FALSE, show.pvalues=TRUE, plot.theme=theme_get(),
+                                     covar.col=NULL, covar.title=covar.col, dist.col=NULL, adj.list=NULL,
+                                     build.panel=TRUE, size=0.1, dodge.width=0.75, alpha=1) {
+  if (is.null(p.df$pvalue) || !norm.dist) show.pvalues <- FALSE
+  if (is.null(dist.col)) {
+    if (norm.dist) {
+      dist.col <- 'NormDist'
+      y.lab <- 'Normalized distance'
+    } else {
+      dist.col <- 'RawDist'
+      y.lab <- 'Raw distance'
+    }
+  } else {
+    y.lab <- dist.col
+  }
+
+  if (!is.null(covar.col)) {
+    aes.dist <- aes_string(x=x.col, y=dist.col, fill=covar.col)
+    aes.pval <- aes_string(x=x.col, y='pvalue', fill=covar.col)
+  } else {
+    aes.dist <- aes_string(x=x.col, y=dist.col)
+    aes.pval <- aes_string(x=x.col, y='pvalue')
+  }
+
+
+  geom.qr <- ggbeeswarm::geom_quasirandom(aes_string(group=covar.col), size=size, dodge.width=dodge.width, alpha=alpha)
+  lg.guide <- guides(fill=guide_legend(title=covar.title))
+  fill.scale <- scale_fill_brewer(palette="Dark2")
+
+  gg.dist <- ggplot(p.df, aes.dist) +
+    geom_boxplot(notch=TRUE, outlier.alpha=0) +
+    geom.qr +
     geom_hline(yintercept=0) +
-    geom_boxplot(outlier.alpha=0, size=0.1, notch=TRUE) +
-    ggbeeswarm::geom_quasirandom(size=0.1, alpha=0.5, width=0.075, dodge.width=0.75) +
-    guides(fill=guide_legend(title="Distance type")) +
-    scale_fill_brewer(palette="Dark2") +
-    theme(legend.position=c(0, 1), legend.justification=c(0, 1), legend.background=element_blank()) +
-    labs(x=x.lab, y="Normalized distance")
+    scale_y_continuous(expand=c(0, 0, 0.05, 0)) +
+    lg.guide + fill.scale + ylab(y.lab) + adj.list
+
+  if (!show.pvalues)
+    return(gg.dist)
+
+  gg.pval <- ggplot(p.df, aes.pval) +
+    geom_boxplot(notch=TRUE, outlier.alpha=0) +
+    geom.qr +
+    scale_y_log10() +
+    geom_hline(yintercept=0.05) +
+    lg.guide + fill.scale + ylab("P-value") + adj.list
+
+  if (build.panel)
+    return(cowplot::plot_grid(gg.dist, gg.pval, ncol=2))
+  return(list(dist=gg.dist, pval=gg.pval))
 }

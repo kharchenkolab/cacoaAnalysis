@@ -1,0 +1,256 @@
+---
+title: 'Simulations for different cell types'
+date: "`r Sys.Date()`"
+author: "[Viktor Petukhov](https://github.com/VPetukhov/)"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: '3'
+    toc_float: true
+    df_print: paged
+---
+
+```{r libs, include=FALSE, message=FALSE}
+library(magrittr)
+library(tidyverse)
+library(cowplot)
+library(cacoa)
+library(conos)
+library(dataorganizer)
+library(sccore)
+
+devtools::load_all()
+
+N_CORES <- 50
+FORCE <- FALSE
+
+DE_FRAC <- 0.1
+LFC <- 1.5
+N_CELLS <- 100
+N_SAMPLES <- 8
+N_REPEATS <- 30
+
+MIN_SAMPS <- 3
+N_PERMUTS <- 2500
+N_PCS <- 6
+TOP_N_GENES <- 500
+
+theme_set(theme_bw() + theme(legend.background=element_blank()))
+```
+
+**WARNING:** this notebook takes hours of computations using 50 cores and requires
+500+ Gb RAM.
+
+In these simulations we used muscat to generate artificial data from the Autism
+dataset. It allowed us to vary individual covariates, fixing the amount of the
+actual expression change. For each set of parameters we performed `r N_REPEATS`
+repeats and estimated median distance and p-value (when available) for
+corresponding metrics.
+
+## Prepare data
+
+```{r}
+con <- DataPath("ASD/con.rds") %>% readr::read_rds() %>% Conos$new()
+cm <- con$getJointCountMatrix(raw=TRUE) %>% t()
+sces <- readOrCreate(CachePath('asd_sim_sces.rds'), function() {
+  sample.per.cell <- con$getDatasetPerCell()
+  sample.groups <- con$misc$sample_metadata$diagnosis
+  cell.groups <- con$misc$cell_metadata$cellType
+
+  # Manually selected by coverage and to vary num. UMIs per type
+  selected.types <- c("AST-FB", "Microglia", "Neu-NRGN", "OPC", "AST-PP",
+                      "IN-SST", "IN-PV", "L2/3", "L5/6-CC")
+
+  selected.types %>% setNames(., .) %>% mclapply(function(ct) {
+    prepareSCEForSimulaton(cm, sample.per.cell=sample.per.cell, cell.groups=cell.groups,
+                           sample.groups=sample.groups, ref.group="Control", subgroups=ct)
+  }, mc.cores=N_CORES, mc.preschedule=TRUE)
+}, force=FORCE)
+```
+
+## Dependency on the number of genes and other cell type covariates
+
+Muscat doesn't allow varying number of genes per cell type properly, so we simulated
+data from different cell types and visualized dependencies of the resulting distances
+on the parameters of these cell types. It does not allow to analyze possible sources
+of variation independently, but still provides some understanding of the dependencies.
+
+```{r, warning=FALSE, message=FALSE}
+n_cores_outer <- min(N_CORES, length(sces))
+n_cores_inner <- max(N_CORES %/% length(sces), 1)
+
+sims_types <- readOrCreate(CachePath('asd_sims_types.rds'), function() {
+  lapply(c(0.0, 0.05, 0.1), function(def) {
+    plapply(names(sces), function(n) {
+      generateSims(sces[[n]]$prep, n.cells=N_CELLS, de.frac=def, n.cores=n_cores_inner, lfc=LFC,
+                  n.samples=N_SAMPLES, suffix=n, n.repeats=N_REPEATS)
+    }, n.cores=n_cores_outer, mc.allow.recursive=TRUE, progress=TRUE) %>% joinSims()
+  })
+}, force=FORCE)
+
+caos_types <- readOrCreate(CachePath('asd_caos_types.rds'), function() {
+  plapply(sims_types, function(sim) {
+    cao <- suppressWarnings(cacoaFromSim(sim, n.cores=N_CORES %/% 3))
+    cao$estimateExpressionShiftMagnitudes(verbose=FALSE, n.permutations=500, 
+                                          min.samp.per.type=MIN_SAMPS)
+    cao$estimateExpressionShiftMagnitudes(
+      verbose=FALSE, n.permutations=500, top.n.genes=TOP_N_GENES, n.pcs=N_PCS,
+      min.samp.per.type=MIN_SAMPS, name='es.top.de'
+    )
+    cao$estimateDEPerCellType(independent.filtering=TRUE, n.cores=N_CORES %/% 3, verbose=FALSE)
+    cao
+  }, n.cores=3, progress=TRUE, mc.allow.recursive=TRUE, mc.preschedule=TRUE)
+}, force=FORCE)
+```
+
+```{r}
+n_genes_per_type <- con$misc$cell_metadata$cellType %>% {split(names(.), .)} %>%
+  sapply(function(ns) sum(colSums(cm[,ns]) > 0))
+
+mean_expr_per_type <- con$misc$cell_metadata$cellType %>% {split(names(.), .)} %>%
+  sapply(function(ns) sum(colSums(cm[,ns]))) %>% {. / n_genes_per_type[names(.)]}
+
+covar_df <- mean_expr_per_type %>%
+  {tibble(ME=., NG=n_genes_per_type[names(.)], Type=names(.))}
+
+p_df <- lapply(1:3, function(i) {
+  df <- prepareExpressionShiftSimDf(caos_types[[i]]$test.results$expression.shifts, 
+                                    sims=sims_types[[i]])
+  top.de.res <- caos_types[[i]]$test.results$es.top.de
+  es.top <- top.de.res$dists.per.type %>% sapply(median)
+  n.de <- sapply(caos_types[[i]]$test.results$de, function(de) sum(de$res$padj < 0.05))
+  n.genes <- table(sims_types[[i]]$gene.info$cluster.id)
+  df$NumDE <- n.de[df$Type]
+  df$FracDE <- round(df$NumDE / n.genes[df$Type], 2)
+  df$ESTop <- es.top[df$Type]
+  df$ESTopPValue <- top.de.res$pvalues[df$Type]
+  df
+}) %>% bind_rows() %>% mutate(de.frac=as.factor(de.frac))
+
+type_order <- p_df %>% filter(de.frac == '0') %>% group_by(suffix) %>%
+  summarise(RawDist=median(RawDist)) %>% arrange(-RawDist) %>% .$suffix
+
+p_df$suffix %<>% factor(levels=type_order)
+```
+
+```{r, fig.width=6, fig.height=4, warning=FALSE, message=FALSE}
+plotExpressionShiftSimDf(p_df, x.col='suffix', norm.dist=FALSE, covar.col='de.frac',
+                         covar.title='DE fraction') +
+  cacoa:::theme_legend_position(c(1, 1)) + theme(axis.title.x=element_blank())
+```
+
+The plot shows raw expression distances between conditions (y-axis) simulated
+from different cell types (x-axis) and different fraction of DE genes (color).
+Each dot on the plot is median distance between the two conditions for one simulation.
+
+It can be seen that there is a lot of variation for the same DE fraction, even if
+it is set to 0.0. To explain the variation we may plot different cell type specific
+covariates.
+
+```{r, fig.width=7, fig.height=6, warning=FALSE, message=FALSE}
+edr <- caos_types[[1]]$test.results$expression.shifts
+tpg <- sims_types[[1]]$params %$% setNames(suffix, cluster.id)
+p_df2 <- lapply(edr$p.dist.info, cacoa:::subsetDistanceMatrix,
+                sample.groups=edr$sample.groups, cross.factor=FALSE) %>%
+  sapply(median) %>% {tibble(Dist=., Cluster=names(.))} %>%
+  mutate(Type=factor(tpg[Cluster], levels=type_order))
+
+gg_within <- ggplot(p_df2, aes(x=Type, y=Dist)) +
+  geom_boxplot(notch=TRUE, outlier.alpha=0) +
+  ggbeeswarm::geom_quasirandom(size=0.1) +
+  theme(panel.grid.major.x=element_blank(), axis.title.x=element_blank()) +
+  ylab("Distances within condition")
+
+ggs_covar <- mapply(function(yc, yl) {
+  ggplot(na.omit(mutate(covar_df, Type=factor(Type, levels=type_order)))) +
+    geom_bar(aes_string(x='Type', y=yc), stat="identity") +
+    scale_y_continuous(expand=c(0, 0, 0.05, 0), name=yl) +
+    theme(panel.grid.major.x=element_blank(), axis.title.x=element_blank())
+}, c("ME", "NG"), c("Mean num. UMI", "Num. genes"), SIMPLIFY=FALSE)
+
+plot_grid(gg_within, plotlist=ggs_covar, ncol=1, align='v')
+```
+
+This plot shows the number of expressed genes in real data (bottom), mean number
+of molecules per gene in real data (middle) and median distance between samples
+within the same condition for DE fraction set to 0.00 (top).
+
+First, it can be seen that the distances within the same cell type are generally
+higher for cell types with low coverage. Second, variation between samples within
+the condition appear to be the main driver of the distances between the conditions.
+
+Normalizing distances as we do to estimate expression shifts we can greatly reduce
+those biases:
+
+```{r, fig.width=9, fig.height=4, warning=FALSE, message=FALSE}
+p.theme <- theme(axis.text.x=element_text(angle=45, hjust=1), axis.title.x=element_blank()) +
+    cacoa:::theme_legend_position(c(0, 1))
+ggs <- plotExpressionShiftSimDf(p_df, x.col='suffix', norm.dist=TRUE, covar.col='de.frac',
+                                covar.title='DE fraction', adj.list=list(p.theme), 
+                                build.panel=FALSE)
+ggs[[2]] %<>% {. + theme(legend.position="none")}
+plot_grid(plotlist=ggs, ncol=2)
+```
+
+And here, focusing on top genes reduces biases even more:
+
+```{r, fig.width=9, fig.height=4, warning=FALSE, message=FALSE}
+ggs <- p_df %>% mutate(NormDist=ESTop, pvalue=ESTopPValue) %>% 
+  plotExpressionShiftSimDf(x.col='suffix', norm.dist=TRUE, covar.col='de.frac',
+                           covar.title='DE fraction', adj.list=list(p.theme), 
+                           build.panel=FALSE)
+ggs[[2]] %<>% {. + theme(legend.position="none")}
+plot_grid(plotlist=ggs, ncol=2)
+```
+
+```{r, message=FALSE, warning=FALSE}
+cao_cf_per_type_types <- readOrCreate(CachePath('asd_cao_cf_per_type_types.rds'), function() {
+  cons_types <- lapply(sims_types, generateConsForClustFree, n.cores=N_CORES)
+  lapply(cons_types, function(ci) {
+    generateCacoaFromConsForClustFree(ci$con.per.type, ci$sim, n.cores=N_CORES)
+  })
+}, force=FORCE)
+```
+
+Cluster-free estimates are the most sensitive to variation in the data. They still 
+work to prioritize cell types with adequate variation, but are likely to miss variable
+cell types:
+
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=3}
+cf_df <- lapply(1:3, function(pi) {
+  caos <- cao_cf_per_type_types[[pi]]
+  params <- sims_types[[pi]]$params
+  z.scores <- sapply(caos, function(cao) 
+    median(cao$test.results$cluster.free.expr.shifts$z_scores, na.rm=TRUE))
+  sapply(caos, function(cao) 
+      median(cao$test.results$cluster.free.expr.shifts$shifts, na.rm=TRUE)) %>%
+    prepareExpressionDistDf(params=params) %>%
+    inner_join(params, c("Type"="cluster.id")) %>%
+    mutate(ns=factor(paste0(ns), levels=paste0(sort(unique(ns)))), z_score=z.scores[Type])
+}) %>% bind_rows() %>% 
+  mutate(de.frac=paste0(de.frac), suffix=factor(suffix, levels=levels(p_df$suffix)))
+
+ggs <- mapply(function(dc, dn) {
+  plotExpressionShiftSimDf(cf_df, x.col='suffix', dist.col=dc, covar.col='de.frac',
+                           covar.title='DE fraction', adj.list=list(p.theme, ylab(dn)))
+}, c('value', 'z_score'), c("Expression shift", "Z-score"), SIMPLIFY=FALSE)
+ggs[[2]] %<>% + theme(legend.position="none")
+plot_grid(plotlist=ggs, ncol=2)
+```
+
+Finally, below is the same plot for the number of significant DE genes. By design
+of the simulations, the number of DE genes linearly depends on the total number
+of genes. So, the right plot shows the fraction of DE genes, which also depends 
+(slightly) on the variation within each cell types. It is up to debate, which of
+these measures should be used for real world examples, though.
+
+```{r, fig.width=10, fig.height=4, warning=FALSE, message=FALSE}
+ggs <- mapply(function(yc, yl) {
+  plotExpressionShiftSimDf(p_df, x.col='suffix', dist.col=yc, covar.col='de.frac',
+                           covar.title='DE fraction') +
+    scale_y_continuous(expand=c(0.01, 0, 0.05, 0), name=yl) +
+    p.theme
+}, c("NumDE", "FracDE"), c("Num. of DE genes", "Frac. of DE genes"), SIMPLIFY=FALSE)
+ggs[[2]] %<>% + theme(legend.position="none")
+plot_grid(plotlist=ggs, ncol=2)
+```

@@ -1,8 +1,8 @@
 #' @import magrittr
 #' @import ggplot2
 
-createPagoda <- function(cm, min.transcripts.per.cell=0, dub.scores=NULL, dub.threshold=0.25) {
-  cm <- cm[-grep("^MT-", rownames(cm)), ]
+createPagoda <- function(cm, min.transcripts.per.cell=0, dub.scores=NULL, dub.threshold=0.25, n.pcs=100) {
+  cm <- cm[!grepl("^MT-", rownames(cm)), ]
   if (!is.null(dub.scores)) {
     cm <- cm[,dub.scores[colnames(cm)] < dub.threshold]
   }
@@ -12,7 +12,7 @@ createPagoda <- function(cm, min.transcripts.per.cell=0, dub.scores=NULL, dub.th
     min.transcripts.per.cell=min.transcripts.per.cell
   )
   p2$adjustVariance(plot=FALSE, gam.k=10)
-  p2$calculatePcaReduction(nPcs=100, n.odgenes=3000, maxit=1000)
+  p2$calculatePcaReduction(nPcs=n.pcs, n.odgenes=3000, maxit=1000)
   return(p2)
 }
 

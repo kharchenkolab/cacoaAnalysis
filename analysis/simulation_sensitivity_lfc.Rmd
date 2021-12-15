@@ -1,0 +1,108 @@
+---
+title: 'Simulations for sensitivity to LFC'
+date: "`r Sys.Date()`"
+author: "[Viktor Petukhov](https://github.com/VPetukhov/)"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: '3'
+    toc_float: true
+    df_print: paged
+---
+
+```{r libs, message=FALSE, warning=FALSE}
+library(magrittr)
+library(tidyverse)
+library(cowplot)
+library(cacoa)
+library(conos)
+library(dataorganizer)
+library(sccore)
+
+devtools::load_all()
+
+N_CORES <- 50
+
+DE_FRAC <- 0.05
+LFC <- 1
+N_CELLS <- 100
+N_SAMPLES <- 8
+N_REPEATS <- 30
+
+MIN_SAMPS <- 3
+N_PERMUTS <- 2500
+N_PCS <- 6
+TOP_N_GENES <- 500
+
+theme_set(theme_bw() + theme(legend.background=element_blank()))
+```
+
+```{r}
+# Requires running simulation_types.Rmd first
+sce <- read_rds(CachePath('asd_sim_sces.rds'))$`IN-PV`$prep
+```
+
+## Sensitivity to LFC
+
+Muscat does not allow simulating data with LFC < 1, so we analyse only values 
+above 1. DE fraction is fixed to `r DE_FRAC`.
+
+```{r, warning=FALSE, message=FALSE}
+lfcs <- seq(1, 2, 0.25)
+sims_lfc <- generateSims(
+  sce, n.cells=N_CELLS, de.frac=DE_FRAC, n.cores=N_CORES, lfc=lfcs, 
+  n.samples=N_SAMPLES, n.repeats=N_REPEATS, verbose=FALSE
+)
+
+cao_lfc <- cacoaFromSim(sims_lfc, n.cores=N_CORES)
+cao_lfc$estimateExpressionShiftMagnitudes(verbose=TRUE, n.permutations=N_PERMUTS, 
+                                          min.samp.per.type=MIN_SAMPS)
+cao_lfc$estimateExpressionShiftMagnitudes(
+  verbose=TRUE, n.permutations=N_PERMUTS, top.n.genes=TOP_N_GENES, n.pcs=N_PCS, 
+  min.samp.per.type=MIN_SAMPS, name='es.top.de'
+)
+cao_lfc$estimateDEPerCellType(independent.filtering=TRUE, verbose=TRUE)
+```
+
+
+Increasing log2-fold change affects the distance a lot:
+
+```{r, fig.width=9, fig.height=4, warning=FALSE, message=FALSE}
+p_df <- cao_lfc$test.results$expression.shifts %>% 
+  prepareExpressionShiftSimDf(sims=sims_lfc) %>% mutate(lfc=as.factor(lfc))
+
+plotExpressionShiftSimDf(p_df, x.col='lfc', norm.dist=TRUE, adj.list=xlab("Log2-fold change"))
+```
+
+Estimating expression shifts over top DE introduce slight dependency though. Probably,
+because of the quality of the selected DE genes.
+
+```{r, fig.width=9, fig.height=4, warning=FALSE, message=FALSE}
+cao_lfc$test.results$es.top.de %>% 
+  prepareExpressionShiftSimDf(sims=sims_lfc) %>% mutate(lfc=as.factor(lfc)) %>% 
+  plotExpressionShiftSimDf(x.col='lfc', norm.dist=TRUE, adj.list=xlab("Log2-fold change"))
+```
+
+Cluster-free estimates have lower sensitivity, but still reach significance pretty 
+fast:
+
+```{r}
+cao_cf_per_type_lfc <- generateConsForClustFree(sims_lfc, n.cores=N_CORES) %$% 
+  generateCacoaFromConsForClustFree(con.per.type, sim, n.cores=N_CORES)
+```
+
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=3}
+plotClusterFreeShiftSimulations(cao_cf_per_type_lfc, params=sims_lfc$params, 
+                                x.col='lfc', adj.list=list(xlab('Log2-fold change')))
+```
+
+The number of DE genes also gets more sensitive as the LFC increases:
+
+```{r, fig.width=5, fig.height=4, warning=FALSE, message=FALSE}
+p_df$NumDE <- cao_lfc$test.results$de %>% 
+  sapply(function(de) sum(de$res$padj < 0.05)) %>% .[p_df$Type]
+
+plotExpressionShiftSimDf(
+  p_df, x.col='lfc', dist.col='NumDE', adj.list=labs(x="Log2-fold change", y="Num. DE genes")
+)
+```

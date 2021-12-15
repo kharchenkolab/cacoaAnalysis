@@ -1,15 +1,14 @@
 Package: cacoaAnalysis
 Type: Package
-Title: What the Package Does (Title Case)
+Title: Cacoa Analysis
 Version: 0.1.0
-Author: Who wrote it
-Maintainer: The package maintainer <yourself@somewhere.net>
-Description: More about what it does (maybe more than one line)
-    Use four spaces when indenting paragraphs within the Description.
-License: What license is it under?
+Authors@R: c(person("Viktor","Petukhov", email="viktor.s.petuhov@ya.ru", role="aut"))
+Description: Analysis for the Cacoa publication
+License: MIT
 Encoding: UTF-8
 LazyData: true
 Imports: 
+    cacoa (>= 0.2.0),
     conos,
     dataorganizer (>= 0.1.0),
     dplyr,
@@ -25,9 +24,13 @@ Imports:
     sccore,
     workflowr
 Suggests:
-    mltools
+    mltools,
+    muscat (>= 1.7.2),
+    reticulate
 Remotes: 
-    khodosevichlab/dataorganizer
+    khodosevichlab/dataorganizer,
+    HelenaLC/muscat,
+    kharchenkolab/cacoa
 Depends: 
     tidyverse
-RoxygenNote: 7.1.1
+RoxygenNote: 7.1.2

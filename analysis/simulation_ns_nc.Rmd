@@ -1,0 +1,188 @@
+---
+title: 'Simulations for the number of cells and samples'
+date: "`r Sys.Date()`"
+author: "[Viktor Petukhov](https://github.com/VPetukhov/)"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: '3'
+    toc_float: true
+    df_print: paged
+---
+
+```{r libs, include=FALSE, message=FALSE}
+library(magrittr)
+library(tidyverse)
+library(cowplot)
+library(cacoa)
+library(conos)
+library(dataorganizer)
+library(sccore)
+
+devtools::load_all()
+
+N_CORES <- 50
+
+DE_FRAC <- 0.1
+LFC <- 1.5
+N_CELLS <- 100
+N_SAMPLES <- 8
+N_REPEATS <- 30
+
+MIN_SAMPS <- 3
+N_PERMUTS <- 2500
+N_PCS <- 6
+TOP_N_GENES <- 500
+
+theme_set(theme_bw() + theme(legend.background=element_blank()))
+```
+
+In these simulations we used muscat to generate artificial data from the Autism
+dataset. It allowed us to vary individual covariates, fixing the amount of the
+actual expression change. For each set of parameters we performed `r N_REPEATS`
+repeats and estimated median distance and p-value (when available) for 
+corresponding metrics.
+
+```{r}
+# Requires running simulation_types.Rmd first
+sce <- read_rds(CachePath('asd_sim_sces.rds'))$`IN-PV`$prep
+```
+
+## Dependency on the number of cells and samples
+
+### Number of samples per cell type
+
+```{r, warning=FALSE, message=FALSE}
+n_samples <- c(3, 5, 7, 9)
+sims_samples <- generateSims(
+  sce, n.cells=N_CELLS, de.frac=DE_FRAC, n.cores=N_CORES, lfc=LFC, 
+  n.samples=n_samples, n.repeats=N_REPEATS, verbose=FALSE
+)
+
+cao_samples <- cacoaFromSim(sims_samples, n.cores=N_CORES)
+cao_samples$estimateExpressionShiftMagnitudes(verbose=TRUE, n.permutations=N_PERMUTS, min.samp.per.type=MIN_SAMPS)
+cao_samples$estimateExpressionShiftMagnitudes(
+  verbose=TRUE, n.permutations=N_PERMUTS, top.n.genes=TOP_N_GENES, n.pcs=N_PCS, 
+  min.samp.per.type=MIN_SAMPS, name='es.top.de'
+)
+cao_samples$estimateDEPerCellType(independent.filtering=TRUE, verbose=TRUE)
+```
+
+The raw expression distance does not depend on the number of samples:
+
+```{r, fig.width=5, fig.height=4, warning=FALSE, message=FALSE}
+p_df <- cao_samples$test.results$expression.shifts %>% 
+  prepareExpressionShiftSimDf(sims=sims_samples) %>% mutate(ns=as.factor(ns)) 
+
+plotExpressionShiftSimDf(p_df, x.col='ns', norm.dist=FALSE, adj.list=xlab("Num. samples"))
+```
+
+The normalized distance does not depend either, however the statisticsl power of 
+the test depends a lot:
+
+```{r, fig.width=9, fig.height=4, warning=FALSE, message=FALSE}
+plotExpressionShiftSimDf(p_df, x.col='ns', norm.dist=TRUE, adj.list=xlab("Num. samples"))
+```
+
+Estimating expression shifts over top DE introduce slight dependency though. Probably,
+because of the quality of the selected DE genes.
+
+```{r, fig.width=9, fig.height=4, warning=FALSE, message=FALSE}
+cao_samples$test.results$es.top.de %>% 
+  prepareExpressionShiftSimDf(sims=sims_samples) %>% mutate(ns=as.factor(ns)) %>% 
+  plotExpressionShiftSimDf(x.col='ns', norm.dist=TRUE, adj.list=xlab("Num. samples"))
+```
+
+Cluster-free estimates are similar to cluster-based in this regard:
+
+```{r}
+cons_samples <- generateConsForClustFree(sims_samples, n.cores=N_CORES)
+```
+
+```{r}
+cao_cf_per_type_samples <- cons_samples %$% 
+  generateCacoaFromConsForClustFree(con.per.type, sim, n.cores=N_CORES)
+```
+
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=3}
+plotClusterFreeShiftSimulations(cao_cf_per_type_samples, params=cons_samples$sim$params, 
+                                x.col='ns', adj.list=list(xlab('Num. samples')))
+```
+
+And the number of significant DE genes depends on the number of samples, just like
+the significance tests for expression shifts above:
+
+```{r, fig.width=5, fig.height=4, warning=FALSE, message=FALSE}
+p_df$NumDE <- cao_samples$test.results$de %>% 
+  sapply(function(de) sum(de$res$padj < 0.05)) %>% .[p_df$Type]
+
+plotExpressionShiftSimDf(
+  p_df, x.col='ns', dist.col='NumDE', adj.list=labs(x="Num. samples", y="Num. DE genes")
+)
+```
+
+### Number of cells per cell type
+
+```{r, message=FALSE, warning=FALSE}
+n_cells <- c(25, 50, 75, 100, 125, 150)
+
+sims_cells <- generateSims(
+  sce, n.cells=n_cells, de.frac=DE_FRAC, n.cores=N_CORES, lfc=LFC, 
+  n.samples=N_SAMPLES, n.repeats=N_REPEATS, verbose=FALSE
+)
+
+cao_cells <- cacoaFromSim(sims_cells, n.cores=N_CORES)
+cao_cells$estimateExpressionShiftMagnitudes(verbose=FALSE, n.permutations=N_PERMUTS, min.samp.per.type=MIN_SAMPS)
+cao_cells$estimateExpressionShiftMagnitudes(
+  verbose=TRUE, n.permutations=N_PERMUTS, top.n.genes=TOP_N_GENES, n.pcs=N_PCS, 
+  min.samp.per.type=MIN_SAMPS, name='es.top.de'
+)
+cao_cells$estimateDEPerCellType(independent.filtering=TRUE, verbose=TRUE)
+```
+
+The raw expression distances depend on the number of samples:
+
+```{r, fig.width=5, fig.height=4, warning=FALSE, message=FALSE}
+p_df <- cao_cells$test.results$expression.shifts %>% 
+  prepareExpressionShiftSimDf(sims=sims_cells) %>% mutate(nc=as.factor(nc)) 
+
+plotExpressionShiftSimDf(p_df, x.col='nc', norm.dist=FALSE, adj.list=xlab("Num. cells"))
+```
+
+However the normalization fixes it:
+
+```{r, fig.width=9, fig.height=4, warning=FALSE, message=FALSE}
+plotExpressionShiftSimDf(p_df, x.col='nc', norm.dist=TRUE, adj.list=xlab("Num. cells"))
+```
+
+And here, using top-DE genes does not introduce new dependencies:
+
+```{r, fig.width=9, fig.height=4, warning=FALSE, message=FALSE}
+cao_cells$test.results$es.top.de %>% 
+  prepareExpressionShiftSimDf(sims=sims_cells) %>% mutate(nc=as.factor(nc)) %>% 
+  plotExpressionShiftSimDf(x.col='nc', norm.dist=TRUE, adj.list=xlab("Num. cells"))
+```
+
+The same with cluster-free:
+
+```{r, message=FALSE, warning=FALSE}
+cons_cells <- generateConsForClustFree(sims_cells, n.cores=N_CORES, ncomps=15, metric="L2")
+cao_cf_per_type_cells <- cons_cells %$% 
+  generateCacoaFromConsForClustFree(con.per.type, sim, n.cores=N_CORES)
+```
+
+```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=3}
+plotClusterFreeShiftSimulations(cao_cf_per_type_cells, params=cons_cells$sim$params, 
+                                x.col='nc', adj.list=list(xlab('Num. cells')))
+```
+
+While the number of significant DE genes does depend on the number of cells:
+
+```{r, fig.width=5, fig.height=4, warning=FALSE, message=FALSE}
+p_df$NumDE <- cao_cells$test.results$de %>% 
+  sapply(function(de) sum(de$res$padj < 0.05)) %>% .[p_df$Type]
+
+plotExpressionShiftSimDf(
+  p_df, x.col='nc', dist.col='NumDE', adj.list=labs(x="Num. cells", y="Num. DE genes")
+)
+```
