@@ -1,5 +1,5 @@
 ---
-title: 'Simulations for sensitivity to DE fraction and LFC'
+title: 'Simulations for sensitivity to LFC'
 date: "`r Sys.Date()`"
 author: "[Viktor Petukhov](https://github.com/VPetukhov/)"
 output:
@@ -37,86 +37,12 @@ TOP_N_GENES <- 500
 theme_set(theme_bw() + theme(legend.background=element_blank()))
 ```
 
-In these simulations we used muscat to generate artificial data from the Autism
-dataset. It allowed us to vary individual covariates, fixing the amount of the
-actual expression change. For each set of parameters we performed `r N_REPEATS`
-repeats and estimated median distance and p-value (when available) for 
-corresponding metrics.
-
 ```{r}
 # Requires running simulation_types.Rmd first
 sce <- read_rds(CachePath('asd_sim_sces.rds'))$`IN-PV`$prep
 ```
 
-## Sensitivity to LFC and DE fraction
-
-### DE fraction
-
-```{r, message=FALSE, warning=FALSE}
-de_fracs <- seq(0.0, 0.15, 0.025) %>% .[1:length(.)]
-
-sims_fracs <- generateSims(
-  sce, n.cells=N_CELLS, de.frac=de_fracs, n.cores=N_CORES, lfc=LFC, 
-  n.samples=N_SAMPLES, n.repeats=N_REPEATS, verbose=FALSE
-)
-
-cao_fracs <- cacoaFromSim(sims_fracs, n.cores=N_CORES)
-cao_fracs$estimateExpressionShiftMagnitudes(verbose=FALSE, n.permutations=N_PERMUTS, min.samp.per.type=MIN_SAMPS)
-cao_fracs$estimateExpressionShiftMagnitudes(
-  verbose=TRUE, n.permutations=N_PERMUTS, top.n.genes=TOP_N_GENES, n.pcs=N_PCS, 
-  min.samp.per.type=MIN_SAMPS, name='es.top.de'
-)
-cao_fracs$estimateDEPerCellType(independent.filtering=TRUE, verbose=TRUE)
-```
-
-
-```{r, fig.width=9, fig.height=4, warning=FALSE, message=FALSE}
-p_df <- cao_fracs$test.results$expression.shifts %>% 
-  prepareExpressionShiftSimDf(sims=sims_fracs) %>% mutate(de.frac=as.factor(de.frac)) 
-
-plotExpressionShiftSimDf(p_df, x.col='de.frac', norm.dist=TRUE, adj.list=xlab("DE Fraction"))
-```
-
-After certain amount of changes, this distance reaches plateau, because adding
-more DE genes does not contribute to the amount of changes in top. One can also
-see that the sensitivity for small DE fraction improved greatly.
-
-```{r, fig.width=9, fig.height=4, warning=FALSE, message=FALSE}
-cao_fracs$test.results$es.top.de %>% 
-  prepareExpressionShiftSimDf(sims=sims_fracs) %>% mutate(de.frac=as.factor(de.frac))  %>% 
-  plotExpressionShiftSimDf(x.col='de.frac', norm.dist=TRUE, adj.list=xlab("DE Fraction"))
-```
-
-Cluster-free shifts are much less sensitive and more variable than the 
-cluster-based version:
-
-```{r, message=FALSE, warning=FALSE}
-cao_cf_per_type_fracs <- generateConsForClustFree(sims_fracs, n.cores=N_CORES) %$%
-  generateCacoaFromConsForClustFree(con.per.type, sim, n.cores=N_CORES)
-```
-
-```{r, message=FALSE, warning=FALSE, fig.width=8, fig.height=3}
-plotClusterFreeShiftSimulations(cao_cf_per_type_fracs, params=sims_fracs$params, 
-                                x.col='de.frac', adj.list=list(xlab('DE fraction')))
-```
-
-There is no surprises regarding the number of DE genes as a metric here:
-
-```{r, fig.width=5, fig.height=4, warning=FALSE, message=FALSE}
-p_df$NumDE <- cao_fracs$test.results$de %>% 
-  sapply(function(de) sum(de$res$padj < 0.05)) %>% .[p_df$Type]
-
-plotExpressionShiftSimDf(
-  p_df, x.col='de.frac', dist.col='NumDE', adj.list=labs(x="DE fraction", y="Num. DE genes")
-)
-```
-
-```{r, message=FALSE, warning=FALSE}
-rm(cao_cf_per_type_fracs, cao_fracs)
-gc()
-```
-
-### Log2-fold change (LFC)
+## Sensitivity to LFC
 
 Muscat does not allow simulating data with LFC < 1, so we analyse only values 
 above 1. DE fraction is fixed to `r DE_FRAC`.
