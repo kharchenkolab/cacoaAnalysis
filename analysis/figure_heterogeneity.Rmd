@@ -1,0 +1,401 @@
+---
+title: 'Analysis of sample heterogeneity'
+date: "`r Sys.Date()`"
+author: "[Viktor Petukhov](https://github.com/VPetukhov/)"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: '3'
+    toc_float: true
+    df_print: paged
+---
+
+```{r libs, include=FALSE, message=FALSE}
+library(tidyverse)
+library(magrittr)
+library(conos)
+library(cowplot)
+library(cacoa)
+library(sccore)
+library(ggrastr)
+library(dataorganizer)
+
+devtools::load_all()
+
+options(ggrastr.default.dpi=100)
+
+theme_set(theme_bw())
+
+theme_emb <- theme(
+  axis.text=element_blank(), axis.ticks=element_blank(), 
+  axis.title=element_blank(), plot.title=element_blank(),
+  legend.spacing=unit(4, "pt"), legend.margin=margin(r=2), 
+  legend.box.spacing=unit(4, "pt"), legend.key.height=unit(4, "pt"),
+  plot.margin=margin(), plot.background=element_blank(),
+  panel.grid.minor=element_blank()
+)
+```
+
+```{r, message=FALSE, warning=FALSE}
+caos <- c("ASD", "AZ", "EP", "MS", "PF") %>% sn() %>% plapply(function(dn) {
+  cao <- read_rds(DataPath(dn, "cao.rds")) %>% Cacoa$new()
+  cao$sample.groups.palette %<>% .[levels(cao$sample.groups)]
+  cao
+}, n.cores=5, progress=TRUE, mc.preschedule=TRUE)
+```
+
+## Main figure
+
+### MS L2-3 disease stage
+
+```{r, fig.width=3, fig.height=3}
+m_size <- 3
+gg_ms_stage <- caos$MS$plotSampleDistances(
+  sample.colors=caos$MS$data.object$misc$sample_metadata$stage, show.sample.size=FALSE, 
+  cell.type="EN-L2-3", color.title="Stage", size=m_size
+) + 
+  theme(plot.title=element_blank(), legend.key=element_rect(fill="transparent")) + 
+  theme_emb + theme_legend_position(c(1, 0)) +
+  guides(shape=guide_none())
+
+gg_ms_stage
+```
+
+### PF metadata testing
+
+```{r, message=FALSE, warning=FALSE}
+sample_meta_pf <- read_csv(DataPath("PF/sample_metadata.csv")) %>% head(-2) %>% 
+  .[,2:10] %>% unique() %>% mutate(
+    Gender=replace(Gender, Gender == "Unknown", NA),
+    Ethnicity=replace(Ethnicity, Ethnicity == "Unknown", NA),
+    Tobacco=replace(Tobacco, Tobacco == "Unknown", NA),
+    Age=as.integer(Age),
+    Ethnicity=sapply(strsplit(Ethnicity, " "), `[[`, 1)
+  ) %>% arrange(Sample_Name) %>% head(-1) %>% 
+  as.data.frame() %>% set_rownames(.$Sample_Name) %>%
+  lapply(setNames, .$Sample_Name)
+
+caos$PF$data.object$misc$sample_metadata <- sample_meta_pf
+```
+
+```{r, fig.width=4, fig.height=4}
+smd <- as.data.frame(sample_meta_pf) %>% dplyr::select(-Sample_Name)
+sep_res <- caos$PF$estimateMetadataSeparation(smd, space="expression.shifts", dist="l1", 
+                                              show.warning=FALSE, n.permutations=20000)
+
+gg_pf_meta <- sep_res$padjust %>% {tibble(Type=names(.), value=.)} %>%
+  cacoa:::plotMeanMedValuesPerCellType(type="bar", yline=0.05, ylab="Separation p-value") +
+  scale_y_continuous(expand=c(0, 0, 0.05, 0), trans=ggforce::trans_reverser('log10')) + 
+  scale_fill_manual(values=rep("#2b8cbe", length(sample_meta_pf))) +
+  theme(axis.title.x=element_blank())
+
+gg_pf_meta
+```
+
+### PF, split by processing site
+
+```{r, fig.width=3, fig.height=3, message=FALSE, warning=FALSE}
+df_melt <- caos$PF$.__enclos_env__$private$extractCodaData(cell.groups=caos$PF$cell.groups, ret.groups=FALSE) %>%
+  {100 * . / rowSums(.)} %>% as.data.frame() %>%
+  mutate(group=caos$PF$sample.groups[rownames(.)], sample=rownames(.)) %>%
+  reshape2::melt(id.vars=c("group", "sample")) %>%
+  mutate(group=paste0(group, ", ", sample_meta_pf$Processing_site[as.character(sample)]))
+
+p_palette <- c("Control, TGen"="#a6cee3", "Control, Vanderbilt"="#33a02c", 
+               "IPF, TGen"="#e41a1c", "IPF, Vanderbilt"="#984ea3")
+
+p_types <- c("Myofibroblasts", "Fibroblasts")
+gg_pf_fracs <- filter(df_melt, (variable %in% p_types)) %>% mutate(variable=droplevels(variable)) %>% 
+  cacoa:::plotCountBoxplotsPerType(plot.theme=caos$PFpf$plot.theme, jitter.width=0.05, alpha=1, size=0.5) +
+    scale_y_continuous(limits=c(0, 3.75), expand=c(0, 0), name="Cell fraction, %") + 
+    scale_x_discrete(expand=c(0, 0.002, 0, 0)) +
+    scale_fill_manual(values=p_palette) +
+    theme_legend_position(c(0.01, 1.05)) +
+    theme(legend.margin=margin(),
+          axis.text.x=element_text(angle=0, hjust=0.5), axis.title.x=element_blank(),
+          panel.grid.major.x=element_blank(), legend.background=element_blank(),
+          legend.key=element_rect(fill="transparent"))
+
+gg_pf_fracs
+```
+
+### Covariate plots
+
+```{r}
+covar_names <- list(
+  ASD=c('region_hr', 'Region'), AZ=c('batch', 'Batch'), EP=c('Protocol', 'Protocol'),
+  MS=c('Seqbatch', 'Seqbatch'), PF=c('Processing_site', 'Processing site')
+)
+```
+
+```{r, fig.width=10, fig.height=2.5}
+covar_pvals <- names(covar_names) %>% sn() %>% sapply(function(cn) {
+  smd <- caos[[cn]]$data.object$misc$sample_meta %>% as.data.frame()
+  caos[[cn]]$estimateMetadataSeparation(smd, space="expression.shifts", dist="l1", show.warning=FALSE)
+  unname(caos[[cn]]$test.results$metadata.separation$padjust[covar_names[[cn]][1]])
+})
+
+ggs_covar <- names(covar_names) %>% sn() %>% lapply(function(cn) {
+  ci <- covar_names[[cn]]
+  smd <- caos[[cn]]$data.object$misc$sample_meta
+  gg <- caos[[cn]]$plotSampleDistances(
+    sample.colors=smd[[ci[1]]], show.sample.size=FALSE, color.title=ci[2], size=m_size
+  )
+
+  lab.df <- gg$data %>% group_by(color) %>% summarize(x=mean(x), y=mean(y))
+
+  gg +
+    # ggrepel::geom_label_repel(aes(x=x, y=y, shape=NULL, label=color), data=lab.df, 
+    #                           fill=alpha("white", 0.5), label.size=0.1, size=3) +
+    theme_emb + theme_legend_position(c(0.03, 0.03)) +
+    theme(legend.background=element_rect(fill=alpha("white", 0.7))) +
+    # guides(shape=guide_legend(order=1, title="Condition", ncol=2), color=guide_legend(ncol=2)) +
+    guides(shape=guide_none(), color=guide_legend(ncol=2)) +
+    theme(panel.grid.major=element_line(size=0.3)) +
+    scale_color_brewer(palette="Dark2")
+})
+
+plot_grid(plotlist=ggs_covar, labels=paste0("p=", signif(covar_pvals, 2)), nrow=1,
+          label_fontface="oblique", hjust=0, label_x=0.1)
+```
+
+### Compile figure
+
+```{r, fig.width=8.5, fig.height=4.25, warning=FALSE, message=FALSE}
+theme_ax <- theme(axis.text.x=element_text(size=9), axis.text.y=element_text(size=8))
+leg_theme <- theme(
+  legend.title=element_text(size=9), legend.text=element_text(size=8), 
+  legend.background=element_blank(), legend.key=element_rect(fill="transparent")
+)
+ggs_covar %<>% lapply(`+`, leg_theme)
+p_ggs_covar <- c(ggs_covar[4], ggs_covar[-4])
+
+p_ggs_covar$AZ %<>% {. + theme_legend_position(c(1, 0))}
+p_ggs_covar[c("PF", "EP")] %<>% lapply(`+`, guides(color=guide_legend(direction="vertical")))
+
+p_labs <- names(p_ggs_covar) %>% paste0(., ", p=", signif(covar_pvals, 2)[.]) %>% 
+  setNames(names(p_ggs_covar)) %>% {c("", .[c("ASD", "EP")], "", .[c("MS", "AZ", "PF")])}
+
+plot_grid(
+  plotlist=c(
+    list(gg_ms_stage + leg_theme),
+    p_ggs_covar,
+    list(gg_pf_fracs + theme_ax + theme(legend.key.height=unit(12, "pt"))),
+    list(gg_pf_meta + theme_ax + theme(axis.title.y=element_text(hjust=1)))
+  ),
+  nrow=2, byrow=FALSE, labels=p_labs, scale=0.95, 
+  label_fontface="oblique", hjust=0, label_x=0.07, label_y=0.99, label_size=12
+)
+
+ggsave(figurePath("4_heterogeneity.pdf"))
+```
+
+## Supp. figure
+
+### PF compositional
+
+```{r, fig.width=5, fig.height=6, message=FALSE, warning=FALSE}
+biased_samples <- sample_meta_pf$Processing_site %>% {names(.)[. != "TGen"]}
+caos$PF$estimateCellLoadings(samples.to.remove=biased_samples, name="coda.subs")
+gg_pf_comp_s <- caos$PF$plotCellLoadings(show.pvals=FALSE, alpha=0.01, name="coda.subs",
+                                         annotation.x=0.66) +
+  scale_x_continuous(limits=c(-1, 1) * 0.66, expand=c(0, 0))
+
+gg_pf_comp_s
+```
+
+### OD
+
+```{r}
+plotMSCovariates <- function(plot.df, metadata) {
+  plot.df %<>% mutate(Batch=metadata$Seqbatch[sample], Sex=metadata$sex[sample])
+
+  ggplot(plot.df) + 
+    geom_point(aes(x=x, y=y, fill=Batch, shape=Sex, color=condition), size=5) +
+    scale_shape_manual(values=c(21, 24)) +
+    scale_color_manual(values=c("black", "gray90")) +
+    guides(fill=guide_legend(override.aes=list(shape=21)),
+           color=guide_legend(override.aes=list(shape=21))) +
+    theme_emb
+    
+}
+
+sample_meta_ms <- caos$MS$data.object$misc$sample_metadata
+sample_meta_ms$sex %<>% {ifelse(. == "female", "F", "M")}
+```
+
+#### Top-100
+
+```{r}
+caos$MS$estimateExpressionShiftMagnitudes(
+  verbose=FALSE, top.n.genes=100, min.samp.per.type=4, gene.selection="od", name='es.od.100'
+)
+```
+
+```{r, fig.width=9, fig.height=4}
+gg_es_100 <- caos$MS$plotExpressionShiftMagnitudes(ylab="expression distance", name='es.od.100')
+gg_mds_100 <- caos$MS$plotSampleDistances(show.sample.size=FALSE, name='es.od.100')$data %>% 
+  plotMSCovariates(metadata=sample_meta_ms)
+
+plot_grid(gg_es_100, gg_mds_100, align="vh", axis="tb", rel_widths=c(1, 0.7))
+```
+
+#### Top-500
+
+```{r}
+caos$MS$estimateExpressionShiftMagnitudes(
+  verbose=FALSE, top.n.genes=500, name='es.od.500', min.samp.per.type=4, gene.selection="od"
+)
+```
+
+```{r, fig.width=9, fig.height=4}
+gg1 <- caos$MS$plotExpressionShiftMagnitudes(ylab="expression distance", name='es.od.500')
+gg2 <- caos$MS$plotSampleDistances(show.sample.size=FALSE, name='es.od.500')$data %>% 
+  plotMSCovariates(metadata=sample_meta_ms)
+
+plot_grid(gg1, gg2, align="vh", axis="tb", rel_widths=c(1, 0.7))
+```
+
+#### Run scITD
+
+```{r}
+library(scITD)
+
+cm_joint <- caos$MS$getJointCountMatrix() %>% t()
+
+cell_meta <- caos$MS$data.object$misc$cell_metadata %>% as.data.frame() %$% 
+  set_rownames(.[,c(5:14, 21)], cell) %>% 
+  rename(donors=sample, ctypes=cellType) %>% 
+  mutate(donors=as.factor(donors), ctypes=as.factor(ctypes))
+
+# scITD filters samples severely if some cell types miss them. So, we focus only on
+# highly represented cell types.
+used_types <- c("Astrocytes", "EN-L2-3", "EN-L4", "EN-L5-6", "IN-PV", "IN-SST", 
+                "IN-SV2C", "IN-VIP", "OL", "OPC")
+```
+
+```{r, message=FALSE, warning=FALSE}
+param_list <- initialize_params(ctypes_use=used_types, ncores=30, rand_seed=10)
+
+container <- make_new_container(
+  params=param_list,
+  count_data=cm_joint[,rownames(cell_meta)], 
+  meta_data=cell_meta
+)
+
+container %<>% form_tensor(
+  donor_min_cells=5, norm_method='trim', scale_factor=10000, vargenes_method='norm_var_pvals', 
+  vargenes_thresh=.5, scale_var=TRUE, var_scale_power=2
+)
+
+print(length(container[["all_vargenes"]]))
+```
+
+```{r, fig.width=10, fig.height=7}
+ranks <- c(5, 6)
+container %<>% run_tucker_ica(ranks=ranks, tucker_type='regular', rotation_type='hybrid')
+
+test_vars <- c('sex', 'diagnosis', 'region', 'Capbatch', 'Seqbatch', 'PMI')
+container %<>% get_meta_associations(vars_test=test_vars, stat_use='pval')
+
+container %<>% plot_donor_matrix(meta_vars=test_vars, show_donor_ids = TRUE,
+                                 add_meta_associations='pval')
+
+container$plots$donor_matrix
+```
+
+```{r}
+sex_related_scores <- get_one_factor(container, factor_select=4)[[2]] %>% rowMeans() %>% abs() %>%
+  sort(decreasing=TRUE)
+
+batch_related_scores <- lapply(c(2, 5), function(fi) {
+  get_one_factor(container, factor_select=fi)[[2]] %>% abs() %>% 
+    {setNames(matrixStats::rowMedians(.), rownames(.))} %>% 
+    sort(decreasing=TRUE)
+})
+```
+
+#### Remove sex-related genes
+
+```{r}
+sr_genes <- names(sex_related_scores)[1:30]
+caos$MS$estimateExpressionShiftMagnitudes(
+  verbose=FALSE, top.n.genes=500, n.permutations=5000, min.samp.per.type=4, gene.selection="od",
+  exclude.genes=sr_genes, name='es.od.500.sex'
+)
+```
+
+```{r, fig.width=7.5, fig.height=3.7}
+gg_es_500_sex <- caos$MS$plotExpressionShiftMagnitudes(
+  ylab="expression distance", y.max=0.59, name='es.od.500.sex'
+)
+gg_mds_500_sex <- caos$MS$plotSampleDistances(show.sample.size=FALSE, name='es.od.500.sex')$data %>% 
+  plotMSCovariates(metadata=sample_meta_ms)
+
+plot_grid(gg_es_500_sex, gg_mds_500_sex, align="vh", axis="tb", rel_widths=c(1, 0.85))
+```
+
+#### Remove batch-related genes
+
+```{r}
+br_genes <- lapply(batch_related_scores, function(v) names(v)[v > 7]) %>% 
+  do.call(union, .)
+
+caos$MS$estimateExpressionShiftMagnitudes(
+  verbose=FALSE, top.n.genes=500, n.permutations=5000, min.samp.per.type=4, gene.selection="od",
+  exclude.genes=union(sr_genes, br_genes), name='es.od.500.sex.batch'
+)
+```
+
+```{r, fig.width=7.5, fig.height=3.7}
+gg_es_500_batch <- caos$MS$plotExpressionShiftMagnitudes(
+  ylab="expression distance", y.max=0.6, name='es.od.500.sex.batch'
+)
+
+gg_mds_500_batch <- caos$MS$plotSampleDistances(
+  show.sample.size=FALSE, name='es.od.500.sex.batch'
+)$data %>% plotMSCovariates(metadata=sample_meta_ms)
+
+plot_grid(gg_es_500_batch, gg_mds_500_batch, align="vh", axis="tb", rel_widths=c(1, 0.85))
+```
+
+### Compile supp. figure
+
+```{r, fig.width=8.5, fig.height=9, message=FALSE, warning=FALSE}
+ggs_od_es <- list(gg_es_100, gg_es_500_sex, gg_es_500_batch) %>% lapply(`+`, theme(
+  axis.text.x=element_text(size=9), axis.text.y=element_text(size=9),
+  axis.title.y=element_text(size=11), plot.margin=margin(), axis.title.x=element_blank()
+)) %>% rasterise(dev="ragg_png")
+
+leg_guide <- guide_legend(
+  title.position="top", direction="horizontal", nrow=3, override.aes=list(shape=21),
+  keywidth=unit(1, "pt"), keyheight=unit(1, "pt")
+)
+ggs_mds_es <- list(gg_mds_100, gg_mds_500_sex, gg_mds_500_batch) %>% lapply(`+`, theme(
+  legend.text=element_text(size=7), legend.title=element_text(size=9), legend.position="bottom",
+  legend.margin=margin(), legend.box.margin=margin()
+)) %>% lapply(`+`, guides(fill=leg_guide, shape=leg_guide, color=leg_guide))
+
+
+gg <- plot_grid(
+  plot_grid(
+    rasterise(gg_pf_comp_s, dev="ragg_png"),
+    ggplot() + theme_nothing(),
+    ncol=1, rel_heights=c(2, 1.5)
+  ),
+  plot_grid(
+    plotlist=c(ggs_od_es, ggs_mds_es),
+    byrow=FALSE,
+    ncol=2, align="h", axis="tb", rel_widths=c(1, 0.7),
+    scale=0.95
+  ), 
+  ncol=2, rel_widths=c(1.25, 2)
+)
+
+grDevices::cairo_pdf(figurePath("4s_heterogeneity.pdf"), width=8.5, height=9)
+gg
+dev.off()
+
+gg
+```
+
