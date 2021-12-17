@@ -1,0 +1,62 @@
+---
+title: 'Cluster-based DE, biological results'
+date: "`r Sys.Date()`"
+author: "[Viktor Petukhov](https://github.com/VPetukhov/)"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: '3'
+    toc_float: true
+    df_print: paged
+---
+
+```{r libs, message=FALSE}
+library(tidyverse)
+library(magrittr)
+library(conos)
+library(cowplot)
+library(cacoa)
+library(sccore)
+library(dataorganizer)
+
+devtools::load_all()
+
+theme_set(theme_bw())
+```
+
+```{r}
+cao_scc <- read_rds(DataPath("SCC/cao.rds")) %>% Cacoa$new()
+```
+
+## Main
+
+```{r, fig.width=7, fig.height=4.75, message=FALSE, warning=FALSE}
+ex_words <- c('regulation', 'process', 'cell')
+cao_scc$plotOntologyHeatmapCollapsed(
+  name='GSEA', clust.method='ward.D', genes='up', n=25, exclude.words=ex_words
+)
+
+ggsave(figurePath("5_de.pdf"))
+```
+
+## Supplement
+
+```{r}
+cao_scc$estimateOntologyFamilies(name='GSEA', p.adj=0.01)
+```
+
+```{r, fig.width=8.5, fig.height=5, message=FALSE, warning=FALSE}
+plt <- cao_scc$plotOntologyFamily(
+  cell.type="NK", name="GSEA", genes="up", plot.type='minimal', family=1, 
+  legend.position="bottomright", font.size=24, string.length=14, legend.label.size=0.75
+)
+
+pdf(figurePath('5s_de.pdf'), width=8.5, height=5)
+Rgraphviz::renderGraph(plt)
+legend("bottomright",
+       legend=c("P < 0.01","P < 0.001"),
+       fill=c("lightpink1","indianred2"),
+       cex=0.75)
+dev.off()
+```
+
