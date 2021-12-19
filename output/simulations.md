@@ -1,8 +1,20 @@
+# Simulations for evaluation of expression change metrics
+
+In these simulations we used Muscat **REF** for simulation of artificial datasets with parameters estimated based on the Autism data. We varied different parameters, such as number of cells and samples and compared several metrics of gene expression change:
+
+- correlation distances between expression shifts ("raw distances")
+- cluster-based expression shifts
+- cluster-based expression shifts estimated on top-500 differentially expressed (DE) genes with subsequent PCA
+- cluster-free expression shifts
+- number of significant DE genes
+
+In most cases, we generated data based on one cell type ("IN-PV") with different parameters, 30 times for each combination of parameters.
+
 ## Dependency on the number of cells and samples
 
 ### Number of samples per cell type
 
-The raw expression distance does not depend on the number of samples:
+We start by showing the raw expression distances (y-axis) depending on the number of samples (x-axis). Hereafter, each dot represent median distance within one simulations. We can see that raw distances do not depend on the number of samples:
 
 <img src="../docs/figure/simulation_ns_nc.Rmd/unnamed-chunk-3-1.png" width="480" />
 
@@ -10,17 +22,19 @@ The normalized distance does not depend either, however the statisticsl power of
 
 <img src="../docs/figure/simulation_ns_nc.Rmd/unnamed-chunk-4-1.png" width="864" />
 
-Estimating expression shifts over top DE introduce slight dependency though. Probably, because of the quality of the selected DE genes.
+Estimating expression shifts over top DE introduce slight dependency. Probably, because of the quality of the selected DE genes.
 
 <img src="../docs/figure/simulation_ns_nc.Rmd/unnamed-chunk-5-1.png" width="864" />
 
-Cluster-free estimates are similar to cluster-based in this regard:
+Cluster-free estimates also do not have the dependency:
 
 <img src="../docs/figure/simulation_ns_nc.Rmd/unnamed-chunk-8-1.png" width="768" />
 
-And the number of significant DE genes depends on the number of samples, just like the significance tests for expression shifts above:
+The number of significant DE genes strongly depends on the number of samples:
 
 <img src="../docs/figure/simulation_ns_nc.Rmd/unnamed-chunk-9-1.png" width="480" />
+
+It happens because the number of detected genes depends on the power of the test, which depends on the number of samples.
 
 ### Number of cells per cell type
 
@@ -40,7 +54,7 @@ The same with cluster-free:
 
 <img src="../docs/figure/simulation_ns_nc.Rmd/unnamed-chunk-15-1.png" width="768" />
 
-While the number of significant DE genes does depend on the number of cells:
+Jsut as in the previous case, the number of significant DE genes does depend on the number of cells:
 
 <img src="../docs/figure/simulation_ns_nc.Rmd/unnamed-chunk-16-1.png" width="480" />
 
@@ -52,7 +66,7 @@ Muscat doesn’t allow varying number of genes per cell type properly, so we sim
 
 <img src="../docs/figure/simulation_types.Rmd/unnamed-chunk-4-1.png" width="576" />
 
-The plot shows raw expression distances between conditions (y-axis) simulated from different cell types (x-axis) and different fraction of DE genes (color). Each dot on the plot is median distance between the two conditions for one simulation.
+Here, we additionally varied fraction of simulated DE genes (color) to compare how much of signal comes from it compared to the signal from the covariates.
 
 It can be seen that there is a lot of variation for the same DE fraction, even if it is set to 0.0. To explain the variation we may plot different cell type specific covariates.
 
@@ -74,19 +88,25 @@ Cluster-free estimates are the most sensitive to variation in the data. They sti
 
 <img src="../docs/figure/simulation_types.Rmd/unnamed-chunk-9-1.png" width="768" />
 
+All the plots above show that the distances for DE fraction set to 0.0 are slightly below 0.0. It is an artifact of simulation, but not one of the distances. This happens because with zero DE genes, Muscat generates two identical sets of samples. So, when estimating distances **between** conditions we have exactly the same distances as we have when estimating **within** the same conditions with the addition of one value of 0.0 as the distance to the identical sample. So, the distances between conditions are on average **lower** than distances within the same condition.
+
 Finally, below is the same plot for the number of significant DE genes. By design of the simulations, the number of DE genes linearly depends on the total number of genes. So, the right plot shows the fraction of DE genes, which also depends (slightly) on the variation within each cell types. It is up to debate, which of these measures should be used for real world examples, though.
 
 <img src="../docs/figure/simulation_types.Rmd/unnamed-chunk-10-1.png" width="960" />
 
-## Sensitivity to LFC
+## Sensitivity to expression change
+
+The two section below test how much different measures change when actual change in the expression happens. We mesure amount of change as log2-fold change (LFC) and the fraction of DE genes.
+
+### Sensitivity to log2-fold change (LFC)
 
 Muscat does not allow simulating data with LFC &lt; 1, so we analyse only values above 1. DE fraction is fixed to 0.05.
 
-Increasing log2-fold change affects the distance a lot:
+Increasing log2-fold change affects the normalized distance a lot:
 
 <img src="../docs/figure/simulation_sensitivity_lfc.Rmd/unnamed-chunk-3-1.png" width="864" />
 
-Estimating expression shifts over top DE introduce slight dependency though. Probably, because of the quality of the selected DE genes.
+Using top DE genes does not increase sensitivity here, as it is already high for DE fraction of 0.05 and LFC > 1.
 
 <img src="../docs/figure/simulation_sensitivity_lfc.Rmd/unnamed-chunk-4-1.png" width="864" />
 
@@ -98,12 +118,14 @@ The number of DE genes also gets more sensitive as the LFC increases:
 
 <img src="../docs/figure/simulation_sensitivity_lfc.Rmd/unnamed-chunk-7-1.png" width="480" />
 
-  
-## Sensitivity to DE fraction
+
+### Sensitivity to DE fraction
+
+The normalized distances depend linearly on the fraction of DE genes and reach significance pretty fast:
 
 <img src="../docs/figure/simulation_sensitivity_frac.Rmd/unnamed-chunk-3-1.png" width="864" />
 
-After certain amount of changes, this distance reaches plateau, because adding more DE genes does not contribute to the amount of changes in top. One can also see that the sensitivity for small DE fraction improved greatly.
+Here, we can see that using top DE genes increases sensitivity for low number of DE genes. However, after certain amount of changes, this distance reaches plateau, because adding more DE genes does not contribute to the amount of changes in top.
 
 <img src="../docs/figure/simulation_sensitivity_frac.Rmd/unnamed-chunk-4-1.png" width="864" />
 
@@ -111,13 +133,13 @@ Cluster-free shifts are much less sensitive and more variable than the cluster-b
 
 <img src="../docs/figure/simulation_sensitivity_frac.Rmd/unnamed-chunk-6-1.png" width="768" />
 
-There is no surprises regarding the number of DE genes as a metric here:
+The number of DE genes here behaves exactly as expected:
 
 <img src="../docs/figure/simulation_sensitivity_frac.Rmd/unnamed-chunk-7-1.png" width="480" />
 
-## Simulation of pairwise distances
+## Evaluation of different normalization methods for expression distances
 
-In these simulations we artificially generate pairwise distance matrix by sampling from two normal distributions with controlled distance between their means and controlled variance of each distribution. Then, we compare three types of distance estimates:
+These simulations are very different from the previous cases. Here we did not use Muscat. Insted we artificially generated pairwise distance matrix by sampling from two normal distributions with controlled distance between their means and controlled variance of each distribution. Then, we compared three types of distance estimates:
 
 1.  **Shift**: <span class="math inline">\\(\\textbf{d}\_{between} - 0.5 \\cdot \\left( \\mathrm{MED}(\\textbf{d}\_{case}) + \\mathrm{MED}(\\textbf{d}\_{control}) \\right)\\)</span>
 2.  **Total**: <span class="math inline">\\(\\textbf{d}\_{between} - \\mathrm{MED}(\\textbf{d}\_{control})\\)</span>
@@ -125,7 +147,7 @@ In these simulations we artificially generate pairwise distance matrix by sampli
 
 ### Equal variance, varying mean
 
-First, let us change mean between two conditions, keeping the variance constant.
+First, we changed mean between two conditions, keeping the variance constant.
 
 <img src="../docs/figure/simulation_distances.Rmd/unnamed-chunk-1-1.png" width="576" />
 
@@ -138,5 +160,3 @@ Now, we will fix the mean offset to different values and vary variance within Ca
 <img src="../docs/figure/simulation_distances.Rmd/unnamed-chunk-2-1.png" width="576" />
 
 This panel shows change in expression distances (y-axis) of different types (color) for increasing standard deviation in Case (x-axis) and fixed Mean offset (from 0 to 2 in the three plots top-down). It can be seen that the "Shift" distance is quite insensitive to the changes in variance, while "Variance" distance behaving exactly the same for each offset value. It also shows that "Total" distance captures both changes.
-
-  
