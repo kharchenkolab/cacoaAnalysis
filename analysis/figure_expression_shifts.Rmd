@@ -442,7 +442,7 @@ p_theme <- theme(
   plot.margin=margin(), legend.key.height=unit(10, "pt"),
   axis.title.x=element_text(size=12), axis.title.y=element_text(size=12),
   axis.text.x=element_text(size=10), axis.text.y=element_text(size=10),
-  axis.ticks=element_line(size=0.25)
+  axis.ticks=element_line(size=0.25), panel.border=element_rect(size=0.5)
 )
 
 theme_box <- theme(axis.title.x=element_blank())
@@ -458,15 +458,15 @@ plot_grid(
   ),
   plot_grid(
     cao_scc$plotExpressionShiftMagnitudes(ylab="Expression distance") + 
-      p_theme + theme_box,
+      p_theme + theme_box + theme(axis.text.y=element_text(angle=0), plot.margin=margin(l=-7)),
     gg_ns_subs + p_theme,
-    nrow=1, rel_widths=c(2, 1), scale=scale
+    nrow=1, rel_widths=c(1, 0.7), scale=scale
   ),
   plot_grid(
-    gg_nde_pf + p_theme + theme_box,
+    gg_nde_pf + p_theme + theme_box + theme(plot.margin=margin(l=12)),
     gg_nde_ms + p_theme + theme_box,
-    gg_nde_scc + p_theme + theme_box,
-    nrow=1, align="h", rel_widths=c(1.5, 1, 0.75), scale=scale
+    gg_nde_scc + p_theme + theme_box + theme(plot.margin=margin(r=5)),
+    nrow=1, align="h", rel_widths=c(1.5, 0.95, 0.8), scale=scale
   ),
   ncol=1, rel_heights=c(0.9, 1.1, 1.2)
 )
