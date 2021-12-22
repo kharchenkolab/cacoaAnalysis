@@ -1,0 +1,447 @@
+---
+title: 'Cluster-free expression analysis'
+date: "`r Sys.Date()`"
+author: "[Viktor Petukhov](https://github.com/VPetukhov/)"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: '3'
+    toc_float: true
+    df_print: paged
+---
+
+```{r libs, message=FALSE}
+library(tidyverse)
+library(magrittr)
+library(conos)
+library(cowplot)
+library(cacoa)
+library(sccore)
+library(dataorganizer)
+library(ggrastr)
+
+options(ggrastr.default.dpi=100)
+rast <- function(...) rasterise(..., dev="ragg_png")
+
+devtools::load_all()
+
+theme_set(theme_bw())
+N_CORES <- 50
+
+score_palette <- brewerPalette("YlOrRd", rev=FALSE)
+```
+
+## Cluster-free shifts, PF
+
+```{r}
+cao_pf <- read_rds(DataPath("PF/cao.rds")) %>% Cacoa$new()
+```
+
+```{r, fig.width=4, fig.height=4}
+cao_endo <- readOrCreate(CachePath("cao_pf_endo.rds"), function() {
+  cms_endo <- lapply(cao_pf$data.object$samples, function(p2) {
+    p2$misc$rawCounts %>% .[cao_pf$cell.groups[rownames(.)] == "Endothelial Cells",] %>% t()
+  }) %>% .[sapply(., ncol) > 80]
+  
+  p2s_endo <- plapply(cms_endo, createPagoda, n.pcs=50, n.cores=N_CORES, progress=TRUE, 
+                      mc.preschedule=TRUE)
+  if ("value" %in% names(p2s_endo)) p2s_endo <- p2s_endo$value
+  
+  con_endo <- conos::Conos$new(p2s_endo, n.cores=N_CORES)
+  con_endo$buildGraph(k=30, k.self.weight=0.5)
+  con_endo$embedGraph(min.prob.lower=1e-4, method="UMAP", verbose=FALSE)
+  con_endo$findCommunities(method=leiden.community, resolution=1, n.iterations=10, name='leiden')
+  
+  endo_cluster_ann <- c(
+    "general capillary", # (AFF3, BTNL9)
+    "arterial", # (DKK2)
+    "systemic-venous", # (COL15A1)
+    "pulmonary-venous", # (CPE)
+    "aerocyte" # (EDNRB)
+  )
+  
+  clusts <- con_endo$clusters$leiden$groups
+  ann_per_clust <- con_endo$samples[[1]]$counts[,c("AFF3", "DKK2", "COL15A1", "CPE", "EDNRB")] %>% 
+    collapseCellsByType(clusts) %>% 
+    {t(.) / colSums(.)} %>% t() %>% 
+    apply(1, which.max) %>% endo_cluster_ann[.]
+  ann_endo <- setNames(ann_per_clust[clusts], names(clusts))
+  
+  cao_endo <- Cacoa$new(
+    con_endo, cell.groups=ann_endo, 
+    sample.groups=cao_pf$sample.groups[names(con_endo$samples)], 
+    ref.level=cao_pf$ref.level, target.level=cao_pf$target.level, n.cores=N_CORES
+  )
+  cao_endo$plot.theme %<>% `+`(theme(legend.background=element_blank()))
+  
+  cao_endo$estimateDEPerCellType(independent.filtering=TRUE, test="DESeq2.Wald")
+  return(cao_endo)
+})
+
+cao_endo$plotEmbedding(color.by='cell.groups')
+```
+
+```{r, fig.width=12, fig.height=4, message=FALSE, warning=FALSE}
+leg_theme <- theme(legend.key.width=unit(12, "pt"), legend.key.height=unit(14, "pt"))
+
+ggs_pf <- cao_pf$plotClusterFreeExpressionShifts(
+  legend.position=c(0, 1), size=0.1, alpha=0.1, cell.groups=NULL, build.panel=FALSE,
+  adj.list=leg_theme
+)
+
+p_lims <- getCellTypeEmbeddingLimits(
+  cao_pf$embedding, cell.groups=cao_pf$cell.groups, groups.to.plot="Endothelial Cells", quant=0.005
+)
+
+gg_endo <- cao_pf$plotClusterFreeExpressionShifts(
+  legend.position=c(1, 1), size=0.3, alpha=1, cell.groups=NULL, build.panel=FALSE,
+)[[1]] + lims(x=p_lims$x, y=p_lims$y) + leg_theme
+
+# ggs_pf[[1]] %<>% transferLabelLayer(cao_pf$plotEmbedding(color.by='cell.groups'), font.size=2)
+gg_endo %<>% cacoa:::transferLabelLayer(cao_pf$plotEmbedding(groups=cao_endo$cell.groups), font.size=3)
+
+plot_grid(plotlist=c(ggs_pf, list(gg_endo)), ncol=3)
+```
+
+```{r, fig.width=8.5, fig.height=2}
+end_mt_genes <- c("FN1", "S100A4") # endothelial-to-mesenchymal transition
+t_sub_cm <- cao_endo$cache$joint.count.matrix[,end_mt_genes]
+expr_df <- cao_endo$sample.per.cell %>% {split(names(.), .)} %>% 
+  lapply(function(samp.cbs) {
+    lapply(split(samp.cbs, cao_endo$cell.groups[samp.cbs]), function(cg.cbs) {
+      tibble(expr=colMeans(t_sub_cm[cg.cbs,,drop=FALSE]), gene=colnames(t_sub_cm))
+    }) %>% bind_rows(.id="Type")
+  }) %>% bind_rows(.id="Sample") %>% 
+  mutate(Condition=cao_endo$sample.groups[Sample])
+
+p_df <- lapply(cao_endo$test.results$de, function(de) {
+  de$res[colnames(t_sub_cm),] %>% 
+    select(Gene, pvalue) %>% as_tibble()
+}) %>% 
+  bind_rows(.id='Type') %>% 
+  mutate(padj=p.adjust(pvalue, method='BH'), Type=stringr::str_wrap(Type, width=6))
+
+expr_df$Type %<>% stringr::str_wrap(width=6) %>% as.factor()
+ggs_box_endo <- split(expr_df, expr_df$gene) %>% lapply(function(df) {
+  pvals <- filter(p_df, Gene == df$gene[1]) %$% setNames(padj, Type)
+  pval.df <- cacoa:::pvalueToCode(pvals, ns.symbol="") %>%
+    tibble(Type=factor(names(.), levels=levels(df$Type)), pvalue=.) %>% na.omit()
+  
+  pvalue.y <- 1.01 * max(df$expr, na.rm=TRUE)
+  ggplot(df) + 
+    geom_boxplot(aes(x=Type, y=expr, fill=Condition), outlier.alpha=0) +
+    ggbeeswarm::geom_quasirandom(aes(x=Type, y=expr, group=Condition), width=0.1, dodge.width=0.75, size=0.5) +
+    geom_text(data=pval.df, mapping=aes(x=Type, label=pvalue), y=pvalue.y, color="black") +
+    scale_y_continuous(limits=c(0, 1.1 * pvalue.y), expand=c(0, 0), name=paste(df$gene[1], "expression")) +
+    scale_fill_manual(values=cao_endo$sample.groups.palette) +
+    cao_endo$plot.theme + theme_legend_position(c(1, 0.9)) +
+    theme(
+      legend.background=element_blank(), 
+      axis.title.x=element_blank(), axis.line.y.left=element_line(size=0.25), axis.line.x.bottom=element_line(size=0.25), 
+      panel.border=element_blank(), panel.grid.major.x=element_blank(), panel.grid.minor.y=element_blank()
+    )
+})
+
+ggs_box_endo[[1]] %<>% {. + theme(legend.position="none")}
+
+plot_grid(plotlist=ggs_box_endo, ncol=2)
+```
+
+```{r, fig.width=8.5, fig.height=4.2, message=FALSE, warning=FALSE}
+leg_theme <- theme(legend.key.width=unit(10, "pt"), legend.key.height=unit(12, "pt"), legend.text=element_text(size=8))
+p_embs <- c(ggs_pf, list(gg_endo)) %>% lapply(`+`, leg_theme) %>% rast()
+
+scale <- 0.97
+plot_grid(
+  plot_grid(plotlist=p_embs, ncol=3, scale=scale),
+  plot_grid(plotlist=ggs_box_endo, ncol=2, scale=scale),
+  ncol=1, rel_heights=c(1, 0.6), scale=scale
+)
+```
+
+## Cluster-free DE, Epilepsy
+
+```{r, fig.width=4, fig.height=4, message=FALSE, warning=FALSE}
+cao_ep <- read_rds(DataPath("EP/cao.rds")) %>% Cacoa$new()
+cao_ep$plot.params <- list(size=0.1, alpha=0.1, font.size=c(2, 3), legend.position=c(0, 1))
+
+org.db <- org.Hs.eg.db::org.Hs.eg.db
+go.environment <- cao_ep$getGOEnvironment(org.db, verbose=TRUE, ignore.cache=FALSE)
+
+cao_ep$plotEmbedding(color.by='cell.groups')
+```
+
+### Global programs
+
+```{r}
+cao_ep$estimateGenePrograms(method="leiden", z.adj=TRUE, smooth=TRUE, n.top.genes=1000,
+                            resolution=1, abs.scores=TRUE, min.z=0.5)
+```
+
+```{r, fig.width=12, fig.height=12}
+cao_ep$plotGeneProgramScores(plot.na=FALSE)
+```
+
+Gene program genes:
+
+```{r, fig.width=10, fig.height=10}
+prog_id <- 2
+# cao_ep$plotGeneProgramGenes(prog_id, ordering="similarity", max.genes=9, plot.na=FALSE) %>% 
+#   plot_grid(plotlist=., ncol=3)
+cao_ep$test.results$gene.programs$sim.scores[[prog_id]] %>% {tibble(Gene=names(.), Score=.)}
+```
+
+```{r, fig.width=16, fig.height=4}
+ggs_shisa9 <- cao_ep$plotGeneExpressionComparison(
+  genes="SHISA9", gene.palette=brewerPalette('YlOrRd', rev=FALSE), plot.na=FALSE, 
+  build.panel=FALSE, plots=c("expression", "z", "z.adj")
+) %>% .[c(3, 4, 1, 2)]
+
+plot_grid(plotlist=ggs_shisa9, nrow=1)
+```
+
+```{r}
+ex_cells <- cao_ep$cell.groups %>% .[grep("^L.*", .)] %>% names()
+gene_universe_global <- which(colMeans(cao_ep$cache$joint.count.matrix[ex_cells,] > 0) > 0.1) %>% 
+  names() %>% cacoa:::mapGeneIds(org.db)
+
+length(gene_universe_global)
+```
+
+```{r, fig.height=4, fig.width=5, message=FALSE, warning=FALSE}
+go_global <- cao_ep$test.results$gene.programs$sim.scores[[prog_id]] %>%
+  head(100) %>% names() %>% cacoa:::mapGeneIds(org.db) %>% list() %>%
+  cacoa:::estimateEnrichedGO(org.db=org.db, go.environment=go.environment,
+                             universe=gene_universe_global, readable=TRUE) %>%
+  lapply(`[[`, 1)
+
+gg_godot_global <- clusteredOntologyDotplot(go_global$BP, min.genes=5) +
+  scale_size_continuous(range=c(1, 5), limits=c(5, 25), breaks=c(5, 10, 20, 25)) + 
+  xlab("Gene ratio") +
+  theme_legend_position(c(1, 0)) + 
+  theme(legend.background=element_blank(), legend.box="horizontal", axis.text.y=element_text(size=11),
+        legend.key.height=unit(8, "pt"), legend.key.width=unit(8, "pt"),
+        plot.title=element_blank())
+gg_godot_global
+```
+
+### Local programs
+
+```{r, message=FALSE, warning=FALSE}
+p_type <- "L2_Cux2_Lamp5"
+cell_subset <- cao_ep$cell.groups %>% .[. == p_type] %>% names()
+genes <- cao_ep$getMostChangedGenes(200, method="z.adj", cell.subset=cell_subset)
+cao_ep$estimateGenePrograms(
+  name="gp.local", genes=names(genes), method="pam", z.adj=TRUE, smooth=FALSE, 
+  cell.subset=cell_subset, n.programs=4, abs.scores=TRUE, min.z=1
+)
+```
+
+```{r}
+local_prog_genes <- c('CADM1', 'CAMK2D', 'CADPS2', 'NTRK2')
+sapply(cao_ep$test.results$gp.local$sim.scores, function(sc) setNames(p_genes %in% names(sc), local_prog_genes))
+```
+
+```{r, fig.width=10, fig.height=3, message=FALSE, warning=FALSE}
+cont <- cao_ep$.__enclos_env__$private$getDensityContours(p_type, color="black", conf="10%")[[1]]
+loc_lims <- getCellTypeEmbeddingLimits(cao_ep$embedding, cao_ep$cell.groups, groups.to.plot=p_type, 
+                                       quant=0.01)
+
+adj_list <- list(cont, lims(x=loc_lims$x, y=loc_lims$y))
+
+cao_ep$plotGeneProgramScores(
+  name="gp.local", plot.na=FALSE, adj.list=adj_list, build.panel=FALSE, 
+  palette=score_palette, alpha=0.25
+) %>% plot_grid(plotlist=., nrow=1)
+```
+
+```{r, fig.width=16, fig.height=16, message=FALSE, warning=FALSE}
+# cao_ep$test.results$gp.local$sim.scores[[1]] %>% head(16) %>% 
+#   cao_ep$plotGeneExpressionComparison(scores=., plots="z.adj", plot.na=FALSE, alpha=0.5) %>% 
+#   lapply(`+`, adj_list) %>% 
+#   plot_grid(plotlist=., ncol=4)
+
+cao_ep$test.results$gp.local$sim.scores[[1]] %>% {tibble(Gene=names(.), Score=.)}
+cao_ep$test.results$gp.local$sim.scores[[2]] %>% {tibble(Gene=names(.), Score=.)}
+```
+
+```{r}
+gene_universe_local <- colMeans(cao_ep$cache$joint.count.matrix[cell_subset,] > 0) %>% 
+  {which(. > 0.1)} %>% names() %>% cacoa:::mapGeneIds(org.db)
+
+length(gene_universe_local)
+```
+
+```{r}
+go_local <- cao_ep$test.results$gp.local$sim.scores %>% 
+  lapply(function(x) head(names(x)[x > 0.5], 20)) %>%
+  lapply(cacoa:::mapGeneIds, org.db) %>% 
+  cacoa:::estimateEnrichedGO(org.db=org.db, go.environment=go.environment, readable=TRUE,
+                             universe=gene_universe_local)
+
+sapply(go_local$BP, function(r) sum(r@result$p.adjust < 0.05)) %>% setNames(1:length(.))
+```
+
+```{r, fig.height=2, fig.width=5, message=FALSE, warning=FALSE}
+gg_godot_local <- clusteredOntologyDotplot(go_local$BP[[1]], min.genes=4) +
+  scale_size_continuous(range=c(1, 5), limits=c(4, 7), breaks=c(4, 6, 7)) +
+  xlab("Gene ratio") +
+  guides(color=guide_none()) +
+  theme_legend_position(c(1, 0)) + 
+  theme(legend.background=element_blank(), legend.box="horizontal", axis.text.y=element_text(size=11),
+        legend.key.height=unit(8, "pt"), legend.key.width=unit(8, "pt"), plot.title=element_blank())
+gg_godot_local
+```
+
+```{r, fig.width=8, fig.height=2}
+# cao_ep$plotGeneExpressionComparison(
+#   genes=c('CADM1', 'CAMK2D', 'CADPS2', 'NTRK2'),
+#   plot.na=FALSE, gene.palette=score_palette,
+#   size=0.2, alpha=0.2#, adj.list=lims(x=c(7, 27), y=c(15, 37))
+# )
+```
+
+### Figure
+
+```{r, fig.width=8, fig.height=8}
+cont <- cao_ep$.__enclos_env__$private$getDensityContours("L2_Cux2_Lamp5", color="black", conf="10%")[[1]]
+```
+
+#### Global
+
+```{r}
+# cao_ep$plotEmbedding(color.by='cell.groups', show.ticks=TRUE) +
+#   scale_x_continuous(limits=c(-12, 70), expand=c(0, 0))
+```
+
+```{r, fig.width=9, fig.height=3, message=FALSE, warning=FALSE}
+prog_id <- 2
+prog_genes <- cao_ep$test.results$gene.programs$loading.scores[[prog_id]]
+prog_cells <- cao_ep$test.results$gene.programs$program.scores[prog_id,] %>% {names(.)[. > 0.1]}
+prog_genes <- cao_ep$test.results$cluster.free.de$z.adj[prog_cells, names(prog_genes)] %>% 
+  colMeans(na.rm=TRUE) %>% sign() %>% {split(prog_genes, .)} %>% setNames(c("neg", "pos"))
+
+# p_genes <- c(prog_genes$pos[1:2], prog_genes$neg[1:2]) %>% names()
+glob_genes <- names(prog_genes$pos[3]) %>% c('NCAM2', 'GABRB2', 'EFNA5')
+ggs <- cao_ep$plotGeneExpressionComparison(genes=glob_genes, plots="z.adj",legend.position="none", plot.na=FALSE)
+
+en_x_lims <- c(-12, 70)
+ggs[[1]] <- ggs[[1]] + theme_legend_position(c(0, 1)) + 
+  theme(legend.key.height=unit(12, "pt"), legend.key.width=unit(12, "pt"))
+
+theme_gene <- theme(plot.title=element_blank(), panel.grid.minor.x=element_blank())
+
+# gg_global_genes <- ggs %>% lapply(`+`, list(xlim(en_x_lims), theme_gene)) %>%
+#   plot_grid(plotlist=., ncol=4, labels=glob_genes, label_fontface="plain", 
+#             hjust=0, label_x=0.04, label_size=12, label_y=0.1)
+
+ggs_global_genes <- ggs %>% lapply(`+`, list(xlim(en_x_lims), theme_gene))
+
+gg_prog_score <- cao_ep$plotGeneProgramScores(prog.ids=prog_id, legend.position=c(0, 1), 
+                                              plot.na=FALSE, palette=score_palette) +
+  cont + theme(plot.title=element_blank(), legend.key.height=unit(12, "pt"), legend.key.width=unit(12, "pt"))
+
+plot_grid(plotlist=c(list(gg_prog_score), ggs_global_genes), nrow=1, rel_widths=c(2, 1, 1, 1, 1))
+```
+
+#### Local
+
+```{r, fig.width=6, fig.height=1.5, message=FALSE, warning=FALSE}
+adj_list <- list(
+  scale_x_continuous(limits=loc_lims$x, expand=c(0, 0)),
+  scale_y_continuous(limits=loc_lims$y, expand=c(0, 0)),
+  theme(plot.title=element_blank(), panel.grid.minor.x=element_blank()),
+  cont
+)
+
+ggs_ls <- cao_ep$plotGeneProgramScores(
+  prog.ids=c(1, 2), name="gp.local", plot.na=FALSE, legend.position="none", 
+  color.range=c(0, 2), build.panel=FALSE, adj.list=adj_list, palette=score_palette
+)
+
+ggs_local_genes <- cao_ep$plotGeneExpressionComparison(
+  genes=local_prog_genes, plots="z.adj",legend.position="none", plot.na=FALSE, adj.list=adj_list,
+  alpha=0.25
+) %>% setNames(local_prog_genes)
+```
+
+```{r, fig.width=8, fig.height=1.5, warning=FALSE}
+plot_grid(
+  plotlist=c(ggs_ls, ggs_local_genes),
+  nrow=1,
+  labels=c("", "", names(ggs_local_genes)), 
+  label_fontface="plain", hjust=0, label_x=0.04, label_size=12, label_y=0.2
+)
+```
+
+## Compile main figure
+
+```{r, fig.width=8.5, fig.height=11, message=FALSE, warning=FALSE}
+leg_theme <- theme(
+  plot.title=element_blank(), legend.key.width=unit(6, "pt"), legend.key.height=unit(8, "pt"),
+  legend.text=element_text(size=8)
+) + theme_legend_position(c(0, 0))
+
+
+p_embs <- c(ggs_pf, list(gg_endo)) %>% 
+  lapply(`+`, leg_theme + theme_legend_position(c(0, 1)))
+
+scale <- 0.95
+
+sg_ggs <- lapply(ggs_shisa9, `+`, list(xlim(en_x_lims), leg_theme))
+sg_ggs[[2]] %<>% {. + theme(legend.position="none")}
+
+ggs_global_genes[[1]] %<>% {. + leg_theme}
+
+plot_grid(
+  plot_grid(
+    plot_grid(plotlist=rast(p_embs), ncol=3, scale=scale),
+    plot_grid(plotlist=ggs_box_endo, ncol=2, scale=scale),
+    ncol=1, rel_heights=c(1, 0.6), scale=scale
+  ),
+  plot_grid(plotlist=rast(c(
+    list(cao_ep$plotEmbedding(color.by='cell.groups', font.size=2)), sg_ggs,
+    list(gg_prog_score + leg_theme), ggs_global_genes,
+    list(plot_grid(plotlist=rast(ggs_ls), ncol=2)), ggs_local_genes
+    )), 
+    labels=c(
+      "", "SHISA9, Control", "SHISA9, MS", "", "",
+      "", glob_genes,
+      "", names(ggs_local_genes)),
+    label_fontface="italic", hjust=0, label_x=0.06, label_size=11,
+    nrow=3, ncol=5, rel_widths=c(2, 1, 1, 1, 1), rel_heights=c(2, 2, 1), scale=scale
+  ),
+  ncol=1, rel_heights=c(4.2, 11 - 4.2)
+)
+
+ggsave(figurePath("6_de_cf.pdf"))
+```
+
+## Compile supp. figure
+
+```{r, fig.width=8.5, fig.height=5.6, message=FALSE, warning=FALSE}
+scale <- 0.95
+
+leg_theme <- theme(legend.key.width=unit(12, "pt"), legend.key.height=unit(14, "pt"))
+
+theme_go <- theme(
+  axis.text.y=element_text(size=10), plot.title=element_blank(), plot.margin=margin()
+)
+
+plot_grid(
+  plot_grid(
+    gg_godot_global + theme_go + theme(plot.margin=margin(t=-2)),
+    gg_godot_local + theme_go,
+    ncol=1, rel_heights=c(2.5, 1), align="v", scale=scale
+  ),
+  plot_grid(
+    rast(cao_ep$plotDiffCellDensity(name='cell.density.graph', type='subtract', color.range=c("1%", "99%"))) +
+      leg_theme,
+    rast(cao_ep$plotDiffCellDensity(name='cell.density.graph', type='wilcox')) + leg_theme,
+    ncol=1, scale=scale
+  ),
+  nrow=1, rel_widths=c(2, 1)
+)
+
+ggsave(figurePath("6s_de_cf.pdf"))
+```
