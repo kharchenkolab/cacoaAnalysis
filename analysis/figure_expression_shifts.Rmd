@@ -19,6 +19,34 @@ library(cacoa)
 library(dataorganizer)
 
 devtools::load_all()
+
+N_PERMUTS <- 1000
+N_RESAMPLES <- 30
+DE_FRACS <- c(0.0, 0.05, 0.1)
+N_CORES <- 75
+
+theme_set(theme_bw())
+```
+
+```{r}
+plotNumSamplesDependency <- function(n.des.per.type, params) {
+  p.df <- prepareExpressionDistDf(n.des.per.type, params=params) %>% 
+    list(dist.df=.) %>% prepareSensitivityDf(params=params, covar.name="nc") %>%
+    mutate(ns=as.integer(as.character(ns)), nc=as.integer(as.character(nc)), 
+           de.frac=factor(paste(100 * de.frac), levels=unique(paste(100 * de.frac))))
+  
+  cov.guide <- guide_legend(title="#cells")
+  
+  ggplot(p.df, aes(x=ns, y=value, color=de.frac, shape=as.factor(nc))) +
+    geom_smooth(aes(linetype=as.factor(nc)), se=FALSE, method=MASS::rlm, size=0.7, formula=y~x) +
+    geom_jitter(size=1, alpha=0.3, width=0.2) +
+    guides(color=guide_legend(title="%DE", order=1), shape=cov.guide, linetype=cov.guide) +
+    labs(x="Num. samples", y="Num. DE genes") +
+    scale_x_continuous(expand=c(0, 0.01), breaks=n_samples) +
+    scale_y_continuous(expand=c(0.01, 0)) +
+    theme_legend_position(c(0, 1)) +
+    theme(legend.key.height=unit(11, "pt"))
+}
 ```
 
 ## Main figure
@@ -30,7 +58,8 @@ cao_pf <- read_rds(DataPath("PF/cao.rds")) %>% Cacoa$new()
 ```
 
 ```{r, fig.width=5, fig.height=4}
-gg_pf <- cao_pf$plotExpressionShiftMagnitudes(ylab="Expresshion distance", y.max=0.21) +
+gg_pf <- cao_pf$plotExpressionShiftMagnitudes(ylab="Expresshion distance", y.max=0.21,
+                                              jitter.alpha=0.0) +
   theme(axis.text.x=element_text(angle=45, hjust=1, vjust=1, size=10))
 gg_pf
 ```
@@ -43,7 +72,8 @@ cao_ms <- read_rds(DataPath("MS/cao.rds")) %>% Cacoa$new()
 
 
 ```{r, fig.width=4, fig.height=3.75}
-gg_ms <- cao_ms$plotExpressionShiftMagnitudes(name="es.top.de", ylab="Expression distance")
+gg_ms <- cao_ms$plotExpressionShiftMagnitudes(name="es.top.de", ylab="Expression distance",
+                                              jitter.alpha=0.0, pvalue.y=2.2)
 gg_ms
 ```
 
@@ -72,7 +102,7 @@ y_labs <- c(mean.shifts="Expression shift", both.shifts="Total distance", var.sh
 gg_shifts <- c("mean.shifts", "var.shifts", "both.shifts") %>% lapply(function(n) {
   cao_az$plotExpressionShiftMagnitudes(
     name=n, ylab=y_labs[n], pvalue.y=0.33, notch=FALSE, ns.symbol="",
-    jitter.alpha=0.1, jitter.size=0.2
+    jitter.alpha=0.0, jitter.size=0.2
   ) +
     ylim(-0.11, 0.35) + theme(
       plot.margin=margin(l=5), axis.ticks.y=element_blank(), axis.title.y=element_text(margin=margin()),
@@ -101,24 +131,51 @@ gg_mds <- lapply(p_types, function(ct) {
 plot_grid(plotlist=gg_mds, labels=p_types, label_fontface="oblique", nrow=1, hjust=0, label_x=0.1)
 ```
 
+### Simulations
+
+```{r}
+n_samples <- c(3, 6, 9)
+sce <- read_rds(CachePath('asd_sim_sces.rds'))$`IN-PV`$prep
+sim <- generateSims(sce, n.cells=c(20, 50, 150), de.frac=DE_FRACS, n.cores=N_CORES, 
+                    n.samples=n_samples, n.repeats=5, verbose=FALSE)
+
+cao_sim <- cacoaFromSim(sim, n.cores=N_CORES)
+cao_sim$estimateDEPerCellType(name='de.full', n.cores=N_CORES)
+```
+
+```{r, warning=FALSE, message=FALSE, fig.width=3, fig.height=3}
+p_theme <- theme(
+  legend.background=element_blank(), legend.box="horizontal", 
+  legend.box.margin=margin(l=5, t=5), legend.margin=margin(), 
+  panel.grid.minor=element_blank()
+)
+
+gg_n_de <- lapply(cao_sim$test.results$de.full, function(dr) sum(dr$res$padj < 0.05)) %>% 
+  plotNumSamplesDependency(params=sim$params) + p_theme
+
+gg_n_de
+```
+
 ### Compile figure
 
-```{r, fig.width=8.5, fig.height=6.5, message=FALSE, warning=FALSE}
+```{r, fig.width=8.5, fig.height=8, message=FALSE, warning=FALSE}
 theme_ax <- theme(
   axis.title.y=element_text(size=12), 
   axis.text.x=element_text(size=10), axis.text.y=element_text(size=10)
 )
 theme_ax_small <- theme(
-  axis.title.y=element_text(size=11), 
+  axis.title.y=element_text(size=11), axis.title.x=element_blank(),
   axis.text.y=element_text(size=8), axis.text.x=element_text(size=9)
 )
-gg_mds[[1]] %<>% {. + theme(
+
+theme_leg <- theme(
   legend.text=element_text(size=10, margin=margin()),
   legend.title=element_text(size=12, margin=margin()),
   legend.key.height=unit(10, "pt"),
-  legend.key=element_rect(fill="transparent"),
-  legend.position=c(0, 0.05)
-)}
+  legend.key=element_rect(fill="transparent")
+)
+
+gg_mds[[1]] %<>% {. + theme_leg + theme(legend.position=c(0, 0.05))}
 
 plot_grid(
   plot_grid(
@@ -127,18 +184,23 @@ plot_grid(
     nrow=1, rel_widths=c(1, 1.3)
   ),
   plot_grid(
-    gg_ms + theme_ax,
     plot_grid(
       plotlist=c(
         lapply(gg_mds, `+`, theme(plot.margin=margin(b=6))), 
         lapply(gg_shifts, `+`, theme_ax_small)),
-      nrow=2, rel_heights=c(1, 1.4), scale=0.99
+      nrow=2, rel_heights=c(1, 1.2), scale=0.99
     ),
-    ggplot() + theme_nothing(), # TODO: replace with simulations
-    nrow=1, rel_widths=c(1.25, 1.9, 1), scale=0.97
+    plot_grid(
+      gg_ms + theme_ax + theme(axis.title.y=element_text(hjust=1)),
+      gg_n_de + theme(plot.margin=margin()) + theme_ax + theme_leg,
+      ncol=1
+    ),
+    nrow=1, rel_widths=c(2, 1), scale=0.97
   ), 
-  nrow=2
+  nrow=2, rel_heights=c(1, 1.4)
 )
+
+ggsave(figurePath("3_expression_shifts.pdf"))
 ```
 
 ## Supp. figure
@@ -152,34 +214,28 @@ cao_scc$plotExpressionShiftMagnitudes(ylab="Expresshion distance") +
   theme(axis.title.y=element_text(size=14))
 ```
 
-## Covariate simulations
+### Covariate simulations
 
-```{r}
-sce <- cachePath("sim_sce/az2_Oli_upd.rds") %>% read_rds() %>% .$prep
-
-N_CORES <- 20
-N_PERMUTS <- 1000
-```
-
-### Num. cells
+#### Num. cells
 
 ```{r, warning=FALSE, message=FALSE}
 sim_nc <- generateSims(sce, n.cells=c(25, 50, 100, 200, 400), n.samples=8,
-                        de.frac=0.1, lfc=1, n.cores=N_CORES, n.repeats=10)
+                        de.frac=0.1, lfc=1, n.cores=N_CORES, n.repeats=30)
 cao_sim_nc <- cacoaFromSim(sim_nc, n.cores=N_CORES)
 
 cao_sim_nc$estimateExpressionShiftMagnitudes(
-  verbose=TRUE, n.permutations=1000, min.samp.per.type=1, n.cores=N_CORES
+  verbose=TRUE, n.permutations=N_PERMUTS, min.samp.per.type=1, n.cores=N_CORES
 )
 ```
 
 ```{r}
 sens_df_adj <- cao_sim_nc$test.results$expression.shifts %$% 
   {list(dist.df=prepareExpressionDistDf(dists.per.type, params=sim_nc$params))} %>% 
-  prepareSensitivityDf(params=sim_nc$params, covar.name="nc") %>% mutate(Type="Adjusted")
+  prepareSensitivityDf(params=sim_nc$params, covar.name="nc") %>% mutate(Type="Normalized")
 
 p_dists <- cao_sim_nc$test.results$expression.shifts$p.dist.info %>% 
-  lapply(subsetDistanceMatrix, sample.groups=cao_sim_nc$sample.groups, cross.factor=TRUE, build.df=FALSE)
+  lapply(cacoa:::subsetDistanceMatrix, sample.groups=cao_sim_nc$sample.groups, 
+         cross.factor=TRUE, build.df=FALSE)
 
 sens_df_raw <- list(dist.df=prepareExpressionDistDf(p_dists, params=sim_nc$params)) %>% 
   prepareSensitivityDf(params=sim_nc$params, covar.name="nc") %>% mutate(Type="Raw")
@@ -188,65 +244,35 @@ sens_df_raw <- list(dist.df=prepareExpressionDistDf(p_dists, params=sim_nc$param
 ```{r, fig.width=4.25, fig.height=3}
 gg_nc <- ggplot(rbind(sens_df_raw, sens_df_adj), aes(x=nc, y=value)) + 
   geom_boxplot(aes(fill=Type), alpha=0.0, position="identity") +
-  ggbeeswarm::geom_beeswarm(aes(color=Type), cex=1.75) +
+  ggbeeswarm::geom_beeswarm(aes(color=Type), cex=1.75, size=0.5) +
   guides(fill="none") +
   labs(x="Num. cells per type", y="Expression distance") +
   cao_sim_nc$plot.theme + theme(panel.grid.major.x=element_blank()) +
-  theme_legend_position(c(1, 1)) + theme_es_box +
+  theme_legend_position(c(1, 1)) +
   theme(legend.background=element_blank()) +
   scale_color_manual(values=c("#5ab4ac", "#d8b365"))
 
 gg_nc
 ```
 
-#### Augur
-
-```{r}
-cm_joint <- cao_sim_nc$getJointCountMatrix(raw=FALSE) %>% t()
-augur_meta <- cao_sim_nc$cell.groups %>% 
-  {data.frame(cell_type=., label=cao_sim_nc$getConditionPerCell()[names(.)])}
-
-augur_res <- Augur::calculate_auc(cm_joint, augur_meta, n_threads=50)
-```
-
-```{r, fig.width=4, fig.height=3}
-dists_per_type <- augur_res$results %>% filter(metric == "roc_auc") %$% split(estimate, cell_type)
-
-sens_df_augur <- prepareExpressionDistDf(dists_per_type, params=sim_nc$params) %>% 
-  {list(dist.df=.)} %>% prepareSensitivityDf(params=sim_nc$params, covar.name="nc")
-
-ggplot(sens_df_augur, aes(x=nc, y=value)) + 
-  geom_boxplot(alpha=0.0, position="identity") +
-  ggbeeswarm::geom_beeswarm(cex=1.75) +
-  guides(fill="none") +
-  labs(x="Num. cells per type", y="Expression distance") +
-  cao_sim_nc$plot.theme + theme(panel.grid.major.x=element_blank()) +
-  theme_legend_position(c(1, 1)) + theme_es_box +
-  theme(legend.background=element_blank()) +
-  scale_color_manual(values=c("#5ab4ac", "#d8b365"))
-```
-
-### Num. samples
+#### Num. samples
 
 ```{r, warning=FALSE, message=FALSE}
-sim_ns <- generateSims(sce, n.cells=300, n.samples=c(3, 5, 8, 11),
-                        de.frac=0.1, lfc=1, n.cores=N_CORES, n.repeats=30)
+sim_ns <- generateSims(sce, n.cells=300, n.samples=c(3, 5, 7, 9),
+                       de.frac=0.1, lfc=1, n.cores=N_CORES, n.repeats=30)
 cao_sim_ns <- cacoaFromSim(sim_ns, n.cores=N_CORES)
-```
-
-```{r}
 cao_sim_ns$estimateExpressionShiftMagnitudes(
-  verbose=TRUE, n.permutations=1000, min.samp.per.type=1, n.cores=N_CORES
+  verbose=TRUE, n.permutations=N_PERMUTS, min.samp.per.type=1, n.cores=N_CORES
 )
 ```
 
 ```{r}
 sens_df_adj <- cao_sim_ns$test.results$expression.shifts %$% 
   {list(dist.df=prepareExpressionDistDf(dists.per.type, params=sim_ns$params))} %>% 
-  prepareSensitivityDf(params=sim_ns$params, covar.name="nc") %>% mutate(Type="Adjusted")
+  prepareSensitivityDf(params=sim_ns$params, covar.name="nc") %>% mutate(Type="Normalized")
 
 p_dists <- cao_sim_ns$test.results$expression.shifts$p.dist.info %>% 
-  lapply(subsetDistanceMatrix, sample.groups=cao_sim_ns$sample.groups, cross.factor=TRUE, build.df=FALSE)
+  lapply(cacoa:::subsetDistanceMatrix, sample.groups=cao_sim_ns$sample.groups, cross.factor=TRUE, build.df=FALSE)
 
 sens_df_raw <- list(dist.df=prepareExpressionDistDf(p_dists, params=sim_ns$params)) %>% 
   prepareSensitivityDf(params=sim_ns$params, covar.name="nc") %>% mutate(Type="Raw")
@@ -255,59 +281,196 @@ sens_df_raw <- list(dist.df=prepareExpressionDistDf(p_dists, params=sim_ns$param
 ```{r, fig.width=4.25, fig.height=3}
 gg_ns <- ggplot(rbind(sens_df_raw, sens_df_adj), aes(x=ns, y=value)) + 
   geom_boxplot(aes(fill=Type), alpha=0.0, position="identity") +
-  ggbeeswarm::geom_beeswarm(aes(color=Type), cex=1.75) +
+  ggbeeswarm::geom_beeswarm(aes(color=Type), cex=1.75, size=0.5) +
   guides(fill="none") +
   labs(x="Num. samples per type", y="Expression distance") +
   cao_sim_ns$plot.theme + theme(panel.grid.major.x=element_blank()) +
-  theme_legend_position(c(1, 0)) + theme_es_box +
+  theme_legend_position(c(1, 0)) +
   theme(legend.background=element_blank()) +
   scale_color_manual(values=c("#5ab4ac", "#d8b365"))
 
 gg_ns
 ```
 
-### Sensitivity
+#### Sensitivity
 
 ```{r, warning=FALSE, message=FALSE}
-sim_sens <- generateSims(sce, n.cells=300, n.samples=8, de.frac=seq(0.0, 0.2, by=0.05), 
+de_fracs <- seq(0.0, 0.2, by=0.05)
+sim_sens <- generateSims(sce, n.cells=300, n.samples=8, de.frac=de_fracs, 
                          lfc=c(1, 1.5, 2), n.cores=N_CORES, n.repeats=5)
 cao_sim_sens <- cacoaFromSim(sim_sens, n.cores=N_CORES)
-```
-
-```{r}
 cao_sim_sens$estimateExpressionShiftMagnitudes(
-  verbose=TRUE, n.permutations=2500, min.samp.per.type=1, n.cores=N_CORES
+  verbose=TRUE, n.permutations=N_PERMUTS, min.samp.per.type=1, n.cores=N_CORES
 )
 ```
 
-```{r}
+```{r, fig.width=4.25, fig.height=3}
 sens_df_adj <- cao_sim_sens$test.results$expression.shifts %$% 
   {list(dist.df=prepareExpressionDistDf(dists.per.type, params=sim_sens$params), pvalues=padjust)} %>% 
   prepareSensitivityDf(params=sim_sens$params)
-```
 
-```{r, fig.width=4.25, fig.height=3}
 gg_sens <- ggplot(sens_df_adj, aes(x=de.frac, y=value, color=lfc)) + 
   geom_smooth(se=0, method=MASS::rlm, formula=y~x) +
   ggbeeswarm::geom_beeswarm() +
   guides(fill="none") +
-  labs(x="Fraction of DE genes", y="Expression distance") +
-  cao_sim_sens$plot.theme +
-  theme_es_box +
+  labs(x="Fraction of DE genes", y="Expression distance", color="LFC") +
+  scale_x_continuous(breaks=de_fracs) +
   theme_legend_position(c(0, 1)) +
-  theme(legend.background=element_blank())
+  theme(legend.background=element_blank(), panel.grid.minor=element_blank()) +
+  scale_color_manual(values=brewerPalette("OrRd", rev=FALSE)(4)[2:4])
 
 gg_sens
 ```
 
-### Supp. fig. part
+### SCC
 
-```{r, fig.width=9, fig.height=2.5}
-p_theme <- theme(plot.margin=margin(r=3), legend.key.height=unit(10, "pt"))
-plot_grid(
-  gg_nc + p_theme, 
-  gg_ns + p_theme, 
-  gg_sens + scale_color_manual(values=brewerPalette("OrRd", rev=FALSE)(4)[2:4]), 
-  ncol=3, align="hv"
+```{r, message=FALSE, warning=FALSE, fig.width=5, fig.height=3.5}
+cao_scc <- read_rds(DataPath("SCC/cao.rds")) %>% Cacoa$new()
+cao_scc$plotExpressionShiftMagnitudes(ylab="Expression distance")
+```
+
+
+
+### Fix num. cells for DE
+
+```{r}
+cao_sim$estimateDEPerCellType(
+  name='de.cells', n.cells.subsample=10, resampling.method='fix.cells', 
+  n.resamplings=20, n.cores=N_CORES
 )
 ```
+
+```{r, warning=FALSE, message=FALSE, fig.width=4, fig.height=4}
+gg_ns_subs <- lapply(cao_sim$test.results$de.cells, function(res) {
+  sapply(res$subsamples, function(df) sum(na.omit(df$padj <= 0.05)))
+}) %>% plotNumSamplesDependency(sim$params) +
+  p_theme
+
+gg_ns_subs
+```
+
+### Real data num. DE
+
+PF:
+
+```{r, message=FALSE, warning=FALSE}
+n_cells <- 30
+for (ns in c(3, 5, 8)) {
+  cao_pf$estimateDEPerCellType(
+    independent.filtering=TRUE, test='DESeq2.Wald', name=paste0("de.fix.samples", ns), 
+    resampling.method='fix.samples', n.cores=N_CORES, n.resamplings=N_RESAMPLES, 
+    fix.n.samples=ns, n.cells.subsample=n_cells, verbose=TRUE
+  )
+}
+```
+
+```{r, fig.width=6, fig.height=4, message=FALSE, warning=FALSE}
+n_de_df <- c(3, 5, 8) %>% {setNames(cao_pf$test.results[paste0("de.fix.samples", .)], .)} %>% 
+  lapply(function(tr) {
+    lapply(tr, `[[`, 'subsamples') %>% .[sapply(., length) > 0] %>% 
+      lapply(function(r) tibble(value=sapply(r, function(df) sum(df$padj <= 0.05, na.rm=TRUE)))) %>% 
+      bind_rows(.id="Type")
+  }) %>% bind_rows(.id="Num. samples")
+
+sdf <- n_de_df %>% filter(`Num. samples` == 3) %>% group_by(Type) %>% 
+  summarise(med=median(value)) %>% arrange(med)
+n_de_df %<>% mutate(Type=factor(Type, levels=sdf$Type))
+
+gg_nde_pf <- ggplot(n_de_df, aes(x=Type, y=value, fill=`Num. samples`)) +
+  geom_boxplot(position=position_dodge(preserve="single"), notch=TRUE, outlier.alpha=0.5, outlier.size=0.5) + 
+  labs(x="", y="Num. DE genes") +
+  cao_pf$plot.theme + theme(
+    axis.text.x=element_text(angle=45, vjust=1, hjust=1, size=11),
+    axis.text.y=element_text(angle=90, hjust=0.5, size=11),
+    axis.title.y=element_text(size=14),
+    panel.grid.major.x=element_blank(), panel.grid.minor=element_blank()
+  ) + theme_legend_position(c(0, 1)) + scale_y_continuous(expand=c(0, 0))
+gg_nde_pf
+
+# cacoa:::plotMeanMedValuesPerCellType
+```
+
+MS:
+
+```{r, message=FALSE, warning=FALSE}
+n_cells <- 30
+n_samples <- 6
+
+cao_ms$estimateDEPerCellType(
+  independent.filtering=TRUE, test='DESeq2.Wald', name="de.fix.samples", 
+  resampling.method='fix.samples', n.cores=N_CORES, n.resamplings=N_RESAMPLES, 
+  fix.n.samples=n_samples, n.cells.subsample=n_cells, verbose=TRUE
+)
+```
+
+```{r, fig.width=3.5, fig.height=4, message=FALSE, warning=FALSE}
+gg_nde_ms <- cao_ms$plotNumberOfDEGenes(
+  name="de.fix.samples", type="box", show.resampling.results=TRUE, jitter.alpha=0.5, 
+  show.jitter=TRUE, jitter.size=0.5, y.offset=1
+) + scale_y_log10(labels=c(0, 10, 100), breaks=c(1, 11, 101), expand=c(0, 0), 
+                  limits=c(1, 300), name="Num. DE genes")
+
+gg_nde_ms
+```
+
+SCC:
+
+```{r, message=FALSE, warning=FALSE}
+n_cells <- 20
+n_samples <- 4
+
+cao_scc$estimateDEPerCellType(
+  independent.filtering=TRUE, test='DESeq2.Wald', name="de.fix.samples", 
+  resampling.method='fix.samples', n.cores=N_CORES, n.resamplings=N_RESAMPLES, 
+  fix.n.samples=n_samples, n.cells.subsample=n_cells, verbose=TRUE
+)
+```
+
+```{r, fig.width=3.5, fig.height=4, message=FALSE, warning=FALSE}
+gg_nde_scc <- cao_scc$plotNumberOfDEGenes(
+  name="de.fix.samples", type="box", show.resampling.results=TRUE, jitter.alpha=0.5, 
+  show.jitter=TRUE, jitter.size=0.5
+) + scale_y_continuous(limits=c(0, 640), expand=c(0, 0), name="Num. DE genes")
+
+gg_nde_scc
+```
+
+### Compile supp. figure
+
+```{r, fig.width=8.5, fig.height=8.5, message=FALSE, warning=FALSE}
+p_theme <- theme(
+  plot.margin=margin(), legend.key.height=unit(10, "pt"),
+  axis.title.x=element_text(size=12), axis.title.y=element_text(size=12),
+  axis.text.x=element_text(size=10), axis.text.y=element_text(size=10),
+  axis.ticks=element_line(size=0.25)
+)
+
+theme_box <- theme(axis.title.x=element_blank())
+
+scale <- 0.92
+
+plot_grid(
+  plot_grid(
+    gg_nc + p_theme, 
+    gg_ns + p_theme, 
+    gg_sens + p_theme, 
+    ncol=3, align="hv", scale=scale
+  ),
+  plot_grid(
+    cao_scc$plotExpressionShiftMagnitudes(ylab="Expression distance") + 
+      p_theme + theme_box,
+    gg_ns_subs + p_theme,
+    nrow=1, rel_widths=c(2, 1), scale=scale
+  ),
+  plot_grid(
+    gg_nde_pf + p_theme + theme_box,
+    gg_nde_ms + p_theme + theme_box,
+    gg_nde_scc + p_theme + theme_box,
+    nrow=1, align="h", rel_widths=c(1.5, 1, 0.75), scale=scale
+  ),
+  ncol=1, rel_heights=c(0.9, 1.1, 1.2)
+)
+
+ggsave(figurePath("3s_expression_shifts.pdf"))
+```
+
