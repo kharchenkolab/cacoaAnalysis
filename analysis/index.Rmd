@@ -19,7 +19,10 @@ editor_options:
 
 ### Simulations
 
-- ...
+- [Simulations for different cell types](./simulation_types.html) *(also generates the necessary data)*
+- [Simulations for num. of cells and num. of samples](./simulation_ns_nc.html)
+- [Simulation for sensitivity to DE fraction change](./simulation_sensitivity_frac.html)
+- [Simulation for sensitivity to log2-fold change](./simulation_sensitivity_lfc.html)
 - [Different normalization types](./simulation_distances.html)
 
 ### Individual dataset reports
