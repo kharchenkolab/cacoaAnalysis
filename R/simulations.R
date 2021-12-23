@@ -54,32 +54,6 @@ convertSCEToSim <- function(sce, params, cluster.id=paste(params, collapse="_"),
   return(res)
 }
 
-subsampleSCE <- function(sce, sample.frac=1.0, cell.frac=1.0, sample.condition=NULL) {
-  params <- list(sample.frac=sample.frac, cell.frac=cell.frac) %>% lapply(signif, 3)
-  params$sample.condition <- sample.condition
-
-  if (cell.frac < 1.0) {
-    subs.ids <- split(1:ncol(sce), sce$sample_id) %>%
-      lapply(function(ids) sample(ids, cell.frac * length(ids))) %>%
-      do.call(c, .)
-    sce <- sce[, subs.ids]
-  }
-
-  if (sample.frac < 1) {
-    sample.per.group <- sce@colData %>% as.data.frame() %$%
-      split(group_id, sample_id) %>% sapply(unique) %>% {split(names(.), .)}
-    if (is.null(sample.condition)) {
-      sample.per.group %<>% lapply(function(ids) sample(ids, round(sample.frac * length(ids))))
-    } else {
-      sample.per.group[[sample.condition]] %<>% sample(round(sample.frac * length(.)))
-    }
-
-    sce <- sce[, sce$sample_id %in% do.call(c, sample.per.group)]
-  }
-
-  return(convertSCEToSim(sce, params))
-}
-
 getDEFracVector <- function(de.fraction, de.type){
   de.types <- c('ep', 'de', 'dp', 'dm', 'db')
   de.vec <- rep(0, 6)
@@ -179,75 +153,6 @@ prepareExpressionDistDf <- function(dist.per.type, params=NULL, clust.order=NULL
   return(res)
 }
 
-## Cacoa metrics
-
-getExprShift <- function(cao.obj, dist='cor', n.subsamples=50, params=NULL, ...) {
-  res <- cao.obj$estimateExpressionShiftMagnitudes(dist=dist, n.subsamples=n.subsamples, ...)
-  dist.per.type <- res$dist.df %$% split(value, Type)
-  if (is.null(params)) return(dist.per.type)
-  return(prepareExpressionDistDf(dist.per.type, params=params))
-}
-
-getCommonExprShift <- function(cao.obj, params=NULL, ...){
-  res <- cao.obj$estimateCommonExpressionShiftMagnitudes(...)
-  cell.types <- names(res[[1]])
-  dist.per.type <- lapply(setNames(cell.types, cell.types), function(n) {
-    lapply(res, `[[`, n) %>% do.call(rbind, .) %>% colMeans()
-  })
-  if (is.null(params)) return(dist.per.type)
-  return(prepareExpressionDistDf(dist.per.type, params=params))
-}
-
-getClustFreeExprShift <- function(cao.obj, n.top.genes=1000, params=NULL, ...){
-  res <- cao.obj$estimateClusterFreeExpressionShifts(n.top.genes=n.top.genes, ...)
-  dist.per.type <- res %>% split(cao.obj$sample.groups[names(.)])
-  if (is.null(params)) return(dist.per.type)
-  return(prepareExpressionDistDf(dist.per.type, params=params))
-}
-
-plotExpressionShiftMetric <- function(cao, dist.func, adjust.pvalues=FALSE, n.cores=1, name="expression.shifts", plot.theme=cao$plot.theme,
-                                      n.permutations=500, params=NULL, return.all=FALSE, ...) {
-  pval.res <- cao$test.results[[name]]$p.dist.info %>%
-    estimatePValuesForDistance(sample.groups=cao$sample.groups, diff.func=dist.func, n.cores=n.cores, verbose=FALSE, n.permutations=n.permutations)
-  if (adjust.pvalues) pval.res$pvalues %<>% p.adjust(method="BH")
-  pval.res$dist.df <- prepareExpressionDistDf(pval.res$dists, params=params)
-
-  if (return.all == "data")
-    return(pval.res)
-
-  pval.res$gg <- cacoa:::plotMeanMedValuesPerCellType(pval.res$dist.df, pvalues=pval.res$pvalues, plot.theme=plot.theme, ...)
-
-  if (return.all)
-    return(pval.res)
-
-  return(pval.res$gg)
-}
-
-generateConsForClustFree <- function(sim, k=30, k.self=5, k.self.weight=0.5, n.cores=30, verbose=TRUE) {
-  cms.per.type.per.samp <- sim$cell.groups[colnames(sim$cm)] %>%
-    {split(names(.), .)} %>%
-    sccore::plapply(function(cg.ids) {
-      cm.cg <- sim$cm[,cg.ids]
-      sim$sample.per.cell[colnames(cm.cg)] %>% droplevels() %>% {split(names(.), .)} %>%
-        lapply(function(sg.ids) cm.cg[,sg.ids])
-    }, n.cores=1, progress=verbose)
-
-  p2s.per.type <- cms.per.type.per.samp %>%
-    sccore::plapply(lapply, vpscutils::GetPagoda, build.graph=FALSE, verbose=FALSE, n.cores=1, progress=verbose)
-
-  if ((length(p2s.per.type) == 2) & ("value" %in% names(p2s.per.type))) {
-    p2s.per.type <- p2s.per.type$value
-  }
-
-  con.per.type <- lapply(p2s.per.type, function(p2s) {
-    con <- conos::Conos$new(p2s, n.cores=n.cores)
-    con$buildGraph(k=k, k.self=k.self, k.self.weight=k.self.weight)
-    con
-  })
-
-  return(list(p2s.per.type=p2s.per.type, con.per.type=con.per.type, sim=sim))
-}
-
 ### Sensitivity estimation
 
 prepareSensitivityDf <- function(metric.res, params, covar.name="lfc", trim=0.1) {
@@ -261,57 +166,6 @@ prepareSensitivityDf <- function(metric.res, params, covar.name="lfc", trim=0.1)
 
   if (!is.null(metric.res$pvalues)) df %<>% mutate(pvalue=metric.res$pvalues[Type])
   return(df)
-}
-
-plotSensitivityComparison <- function(sens.df, y=c("distance", "pvalue"), yline=NULL, color.title="LFC",
-                                      plot.theme=theme_get(), alpha=0.75, size=2, jitter.width=0.005) {
-  y <- match.arg(y)
-  if (y == "distance") {
-    p.aes <- aes(x=de.frac, y=value, color=covar, shape=ns)
-    y.lab <- "Expression distance"
-    leg.pos <- c(0, 1)
-  } else {
-    p.aes <- aes(x=de.frac, y=-log10(pvalue), color=covar, shape=ns)
-    y.lab <- "-log10(p-value)"
-    leg.pos <- c(1, 0)
-    yline <- -log10(0.05)
-  }
-  gg <- ggplot(sens.df, p.aes) +
-    geom_smooth(aes(linetype=ns), size=size, alpha=alpha, se=FALSE) +
-    ggbeeswarm::geom_quasirandom(aes(fill=as.factor(rep)), size=size*1.5, alpha=alpha, width=jitter.width) +
-    plot.theme + cacoa:::theme_legend_position(leg.pos) +
-    labs(x="DE fraction", y=y.lab) +
-    theme(legend.background=element_blank()) +
-    guides(color=guide_legend(title=color.title), fill=guide_none())
-
-  if (length(unique(sens.df$ns)) < 2) {
-    gg <- gg + guides(shape=guide_none(), linetype=guide_none())
-  }
-
-  if (!is.null(yline)) gg <- gg + geom_hline(yintercept=yline)
-  return(gg)
-}
-
-plotSensitivityComparisonPanel <- function(sens.df, yline=NULL, adj.list=NULL, ...) {
-  cowplot::plot_grid(
-    plotSensitivityComparison(sens.df, y="distance", yline=yline, ...) + adj.list,
-    plotSensitivityComparison(sens.df, y="pvalue", ...) + adj.list,
-    ncol=2
-  )
-}
-
-plotExpressionShiftResults <- function(dists.per.type, pvalues, params, ns.col=NULL, trim=0.1, covar.name="lfc", ...) {
-  p.df <- list(dist.df=prepareExpressionDistDf(dists.per.type, params=params), pvalues=pvalues) %>%
-    prepareSensitivityDf(params=params, covar.name=covar.name, trim=trim)
-
-  if (!is.null(ns.col)) {
-    p.df$ns <- p.df[[ns.col]]
-  }
-
-  if (is.null(pvalues))
-    return(plotSensitivityComparison(p.df, y="distance", yline=0.0, color.title=covar.name, ...))
-
-  return(plotSensitivityComparisonPanel(p.df, yline=0.0, color.title=covar.name, ...))
 }
 
 extractRawDistances <- function(p.dist.info, sample.groups) {
