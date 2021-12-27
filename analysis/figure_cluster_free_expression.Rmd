@@ -239,7 +239,8 @@ cao_ep$estimateGenePrograms(
 
 ```{r}
 local_prog_genes <- c('CADM1', 'CAMK2D', 'CADPS2', 'NTRK2')
-sapply(cao_ep$test.results$gp.local$sim.scores, function(sc) setNames(p_genes %in% names(sc), local_prog_genes))
+sapply(cao_ep$test.results$gp.local$sim.scores, function(sc) 
+  setNames(local_prog_genes %in% names(sc), local_prog_genes))
 ```
 
 ```{r, fig.width=10, fig.height=3, message=FALSE, warning=FALSE}
@@ -405,11 +406,11 @@ plot_grid(
     list(plot_grid(plotlist=rast(ggs_ls), ncol=2)), ggs_local_genes
     )), 
     labels=c(
-      "", "SHISA9, Control", "SHISA9, MS", "", "",
+      "", "SHISA9, Control", "SHISA9, Epilepsy", "", "",
       "", glob_genes,
       "", names(ggs_local_genes)),
-    label_fontface="italic", hjust=0, label_x=0.06, label_size=11,
-    nrow=3, ncol=5, rel_widths=c(2, 1, 1, 1, 1), rel_heights=c(2, 2, 1), scale=scale
+    label_fontface="italic", hjust=0, label_x=0.07, label_y=0.98, label_size=11,
+    nrow=3, ncol=5, rel_widths=c(2, 1, 1, 1, 1), rel_heights=c(2, 2, 1), scale=scale * 0.98
   ),
   ncol=1, rel_heights=c(4.2, 11 - 4.2)
 )
@@ -419,7 +420,7 @@ ggsave(figurePath("6_de_cf.pdf"))
 
 ## Compile supp. figure
 
-```{r, fig.width=8.5, fig.height=5.6, message=FALSE, warning=FALSE}
+```{r, fig.width=8.5, fig.height=10, message=FALSE, warning=FALSE}
 scale <- 0.95
 
 leg_theme <- theme(legend.key.width=unit(12, "pt"), legend.key.height=unit(14, "pt"))
@@ -428,19 +429,35 @@ theme_go <- theme(
   axis.text.y=element_text(size=10), plot.title=element_blank(), plot.margin=margin()
 )
 
+score_theme <- theme(
+  plot.title=element_blank(), 
+  legend.key.width=unit(10, "pt"), legend.key.height=unit(10, "pt")
+)
+
+ggs_glob_scores <- cao_ep$plotGeneProgramScores(
+  plot.na=FALSE, prog.ids=2:9, adj.list=score_theme,
+  build.panel=FALSE
+)
+
 plot_grid(
   plot_grid(
-    gg_godot_global + theme_go + theme(plot.margin=margin(t=-2)),
-    gg_godot_local + theme_go,
-    ncol=1, rel_heights=c(2.5, 1), align="v", scale=scale
+    plotlist=rast(ggs_glob_scores), ncol=4, scale=0.98
   ),
   plot_grid(
-    rast(cao_ep$plotDiffCellDensity(name='cell.density.graph', type='subtract', color.range=c("1%", "99%"))) +
-      leg_theme,
-    rast(cao_ep$plotDiffCellDensity(name='cell.density.graph', type='wilcox')) + leg_theme,
-    ncol=1, scale=scale
+    plot_grid(
+      gg_godot_global + theme_go + theme(plot.margin=margin(t=-2)),
+      gg_godot_local + theme_go,
+      ncol=1, rel_heights=c(2.5, 1), align="v", scale=scale
+    ),
+    plot_grid(
+      rast(cao_ep$plotDiffCellDensity(name='cell.density.graph', type='subtract', color.range=c("1%", "99%"))) +
+        leg_theme,
+      rast(cao_ep$plotDiffCellDensity(name='cell.density.graph', type='wilcox')) + leg_theme,
+      ncol=1, scale=scale
+    ),
+    nrow=1, rel_widths=c(2, 1)
   ),
-  nrow=1, rel_widths=c(2, 1)
+  ncol=1, rel_heights=c(4.4, 5.6), scale=0.97
 )
 
 ggsave(figurePath("6s_de_cf.pdf"))
