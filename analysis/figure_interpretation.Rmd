@@ -1,0 +1,278 @@
+---
+title: 'Functional interpretation'
+date: "`r Sys.Date()`"
+author: "[Viktor Petukhov](https://github.com/VPetukhov/)"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: '3'
+    toc_float: true
+    df_print: paged
+---
+
+```{r libs, include=FALSE, message=FALSE}
+library(tidyverse)
+library(magrittr)
+library(conos)
+library(cowplot)
+library(cacoa)
+library(sccore)
+library(dataorganizer)
+# library(ggrastr)
+
+# options(ggrastr.default.dpi=100)
+# rast <- function(...) rasterise(..., dev="ragg_png")
+
+devtools::load_all()
+
+theme_set(theme_bw())
+N_CORES <- 40
+org.db <- org.Hs.eg.db::org.Hs.eg.db
+```
+
+## Epithelial cells
+
+### Extract
+
+```{r, message=FALSE, warning=FALSE}
+cao_ept <- readOrCreate(CachePath("cao_pf_ept.rds"), function() {
+  cao.pf <- read_rds(DataPath("PF/cao.rds")) %>% Cacoa$new()
+  epithelial.types <- c(
+    "AT1", "Transitional AT2", "AT2", "Basal", "KRT5-/KRT17+", "MUC5AC+ High", "MUC5B+",
+    "Proliferating Epithelial Cells", "SCGB3A2+", "SCGB3A2+ SCGB1A1+"
+  )
+  
+  ept.cms <- lapply(cao.pf$data.object$samples, function(p2) {
+    p2$misc$rawCounts %>% .[cao.pf$cell.groups[rownames(.)] %in% epithelial.types,] %>% t()
+  }) %>% .[sapply(., ncol) > 80]
+  
+  ept.p2s <- plapply(ept.cms, createPagoda, n.pcs=50, n.cores=N_CORES, progress=TRUE,
+                     mc.preschedule=TRUE)
+  if ("value" %in% names(ept.p2s)) ept.p2s <- ept.p2s$value
+  
+  ept.con <- conos::Conos$new(ept.p2s, n.cores=N_CORES)
+  ept.con$buildGraph(k=30, k.self.weight=0.5)
+  ept.con$embedGraph(min.prob.lower=1e-4, method="UMAP", verbose=FALSE)
+  
+  cao.ept <- Cacoa$new(
+    ept.con, cell.groups=cao.pf$cell.groups[names(ept.con$getDatasetPerCell())], 
+    sample.groups=cao.pf$sample.groups[names(ept.con$samples)], 
+    ref.level=cao.pf$ref.level, target.level=cao.pf$target.level, n.cores=N_CORES
+  )
+  cao.ept$plot.theme %<>% `+`(theme(legend.background=element_blank()))
+  
+  cao.ept$estimateDEPerCellType(independent.filtering=TRUE, test="DESeq2.Wald")
+  cao.ept$estimateOntology(org.db=org.db, type='GSEA')
+  return(cao.ept)
+}) %>% Cacoa$new()
+```
+
+### Cluster-based
+
+```{r}
+cao_ept$estimateOntology(org.db=org.db, type='GSEA') # TODO: remove this
+```
+
+```{r, fig.width=6.5, fig.height=4.5}
+gg_at_apopt <- cao_ept$plotOntologyHeatmap(
+  name='GSEA', genes="up", description.regex='death|apopt|proliferation', min.genes=10,
+  description.exclude.regex='neur', max.log.p=5
+)
+
+gg_at_apopt
+```
+
+```{r, fig.width=6, fig.height=4.75}
+immune_regex <- 'vir|immune|interferon|inflam'
+gg_at_immune <- cao_ept$plotOntologyHeatmap(
+  name='GSEA', genes="all", legend.title='-log10(p-value) * S',
+  description.regex=immune_regex, min.genes=10, max.log.p=5
+)
+
+gg_at_immune
+```
+
+```{r, fig.width=5, fig.height=3}
+gg_at_matrix <- cao_ept$plotOntologyHeatmap(
+  name='GSEA', genes="up", description.regex='matrix|mesen', min.genes=10, max.log.p=5
+)
+
+gg_at_matrix
+```
+
+### Cluster-free
+
+```{r}
+cao_ept$estimateClusterFreeDE(n.top.genes=1000, min.expr.frac=0.01, adjust.pvalues=TRUE, 
+                              smooth=TRUE)
+```
+
+#### Gene programs
+
+
+```{r}
+cao_ept$estimateGenePrograms(n.programs=9, z.adj=TRUE, abs.scores=TRUE, smooth=FALSE, verbose=FALSE)
+```
+
+```{r, fig.width=14, fig.height=14}
+cao_ept$plotGeneProgramScores(legend.position=c(0, 1), size=0.1, alpha=0.5, plot.na=FALSE,
+                              adj.list=theme(plot.margin=margin()))
+```
+
+```{r, fig.width=6, fig.height=3}
+ggs_cf_scores <- cao_ept$plotGeneProgramScores(
+  prog.ids=c(6, 8), legend.position=c(0, 1), size=0.1, alpha=0.3, build.panel=FALSE, 
+  plot.na=FALSE, adj.list=theme(plot.margin=margin(), plot.title=element_blank())
+)
+
+plot_grid(plotlist=ggs_cf_scores)
+```
+
+```{r}
+go_env <- cao_ept$getGOEnvironment(org.db=org.db)
+gene_universe_global <- colnames(cao_ept$test.results$cluster.free.de$z.adj) %>% 
+  cacoa:::mapGeneIds(org.db)
+length(gene_universe_global)
+```
+
+
+```{r}
+t_scores <- c(6, 8) %>% 
+  {setNames(cao_ept$test.results$gene.programs$sim.scores[.], .)} %>% 
+  lapply(function(x) x[x > 0.5])
+sapply(t_scores, length)
+go_global <- lapply(t_scores, function(x) head(names(x[x > 0.5]), 50)) %>% 
+  lapply(cacoa:::mapGeneIds, org.db) %>% 
+  cacoa:::estimateEnrichedGO(org.db=org.db, go.environment=go_env, universe=gene_universe_global)
+
+go_dfs <- lapply(go_global$BP, function(r) filter(r@result, p.adjust < 0.05)) %>% 
+  .[sapply(., nrow) > 0]
+
+sapply(go_dfs, nrow)
+```
+
+#### AT2 -> AT1
+
+```{r}
+go_dfs$`6` %$% setNames(strsplit(geneID, "/"), Description) %>% 
+  cacoa:::estimateClusterPerGO(cut.h=0.4) %>% {split(names(.), .)} %>% 
+  sapply(paste, collapse='"; "') %>% {paste0('"', ., '"\n')} %>% cat()
+```
+
+```{r, fig.height=3, fig.width=6.5}
+gg_go_at <- clusteredOntologyDotplot(go_global$BP$`6`, orderBy='x', cut.h=0.4)
+gg_go_at
+```
+
+#### Transitional state program
+
+```{r}
+c_go_clusts <- go_dfs$`8` %$% setNames(strsplit(geneID, "/"), Description) %>% 
+  cacoa:::estimateClusterPerGO(cut.h=0.4) %>% {split(names(.), .)}
+
+c_go_clusts %>% sapply(paste, collapse='"; "') %>% {paste0('"', ., '"\n')} %>% cat
+```
+
+```{r, fig.height=3.5, fig.width=5}
+gg_go_trans <- clusteredOntologyDotplot(go_global$BP[["8"]], orderBy='x', cut.h=0.4)
+gg_go_trans
+```
+
+```{r, fig.width=4, fig.height=4}
+cao_ept$plot.params <- list(size=0.5, alpha=0.5)
+ggs_at_genes <- c("AGER", "HOPX", "SFTPC") %>% sccore::sn() %>% lapply(function(gn) {
+  cao_ept$plotEmbedding(colors=cao_ept$cache$joint.count.matrix.norm[,gn], legend.title="Expr.",
+                        legend.position=c(0, 1))
+})
+
+ggs_at_genes
+```
+
+## Endothelial cells
+
+```{r}
+# Requires running cluster-free expression figure first
+cao_endo <- read_rds(CachePath("cao_pf_endo.rds")) %>% Cacoa$new()
+cao_endo$estimateOntology(type="GSEA", org.db=org.Hs.eg.db::org.Hs.eg.db)
+```
+
+```{r, fig.width=4.5, fig.height=3}
+gg_end_viral <- cao_endo$plotOntologyHeatmap(
+  name='GSEA', genes="all", legend.title='-log10(p-value) * S',
+  description.regex='vir|immune|interferon|inflam', min.genes=10, max.log.p=5,
+  description.exclude.regex='built from' # Remove one super-long GO for cluster name
+)
+
+gg_end_viral
+```
+
+```{r, fig.width=5, fig.height=2}
+cao_endo$plotOntologyHeatmap(name='GSEA', genes="up", description.regex='matrix|mesen')
+```
+
+## Compile the figure
+
+```{r, fig.width=8.5, fig.height=11}
+theme_ax <- theme(
+  axis.text.x=element_text(size=8),
+  axis.text.y=element_text(size=8, lineheight=0.75),
+  plot.title=element_blank(),
+  plot.margin=margin()
+)
+
+fill_guide <- guides(fill=guide_colorbar(
+  title='-log10(p-value) * S', title.theme=element_text(size=12), 
+  title.position="top"
+))
+
+fill_scale <- gg_at_immune$scales$scales[[3]]
+
+plt_list <- list(gg_at_apopt, gg_at_immune, gg_at_matrix, gg_end_viral) %>% lapply(function(gg) {
+  levels(gg$data$G1) %<>% str_wrap(50)
+  gg <- gg + theme_ax + fill_guide + fill_scale + theme_legend_position("none")
+  gg
+})
+
+plt_list[[2]] %<>% {. + theme(
+  legend.position=c(2.3, 1.3), legend.justification=c(1, 1), 
+  legend.direction="horizontal", legend.margin=margin(),
+  legend.box.margin=margin(),
+  legend.key.height=unit(12, "pt"), legend.key.width=unit(16, "pt")
+)}
+
+go_fill_scale <- scale_color_continuous(low="red", high="blue", limits=c(0, 0.05),
+                                        guide=guide_colorbar(reverse=TRUE))
+go_size_scale <- scale_size_continuous(limits=c(4, 20))
+
+gg_go_at %<>% {. + go_fill_scale + go_size_scale + xlab("Gene ratio")}
+gg_go_trans %<>% {. + go_fill_scale + go_size_scale + xlab("Gene ratio")}
+
+go_leg_grob <- ggpubr::get_legend(gg_go_at)
+
+ggs_cf_scores_rast <- lapply(ggs_cf_scores, ggrastr::rasterise, dev="ragg_png", dpi=100)
+
+plot_grid(
+  plot_grid(
+    plotlist=plt_list,
+    ncol=2, rel_heights=c(1, 0.6), align="hv", scale=0.95
+  ),
+  plot_grid(
+    plot_grid(
+      ggs_cf_scores_rast[[1]] + 
+        theme(legend.key.width=unit(8, "pt"), legend.key.height=unit(10, "pt")),
+      ggs_cf_scores_rast[[2]] + theme(legend.position="none"),
+      ncol=1, scale=0.97
+    ),
+    plot_grid(
+      gg_go_at + theme_ax + theme(legend.position="none", axis.text.y=element_text(size=10)),
+      gg_go_trans + theme_ax + theme(legend.position="none", axis.text.y=element_text(size=10)),
+      ncol=1, align="v", scale=0.95
+    ),
+    go_leg_grob,
+    nrow=1, rel_widths=c(1, 2, 0.5)
+  ),
+  ncol=1, rel_heights=c(7.5, 3.5), scale=0.97
+)
+
+ggsave(figurePath("7_functional_interpretation.pdf"))
+```
