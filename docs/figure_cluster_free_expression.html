@@ -1,0 +1,1213 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+
+<meta name="author" content="Viktor Petukhov" />
+
+<meta name="date" content="2021-12-27" />
+
+<title>Cluster-free expression analysis</title>
+
+<script src="site_libs/jquery-3.6.0/jquery-3.6.0.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link href="site_libs/bootstrap-3.3.5/css/cosmo.min.css" rel="stylesheet" />
+<script src="site_libs/bootstrap-3.3.5/js/bootstrap.min.js"></script>
+<script src="site_libs/bootstrap-3.3.5/shim/html5shiv.min.js"></script>
+<script src="site_libs/bootstrap-3.3.5/shim/respond.min.js"></script>
+<style>h1 {font-size: 34px;}
+       h1.title {font-size: 38px;}
+       h2 {font-size: 30px;}
+       h3 {font-size: 24px;}
+       h4 {font-size: 18px;}
+       h5 {font-size: 16px;}
+       h6 {font-size: 12px;}
+       code {color: inherit; background-color: rgba(0, 0, 0, 0.04);}
+       pre:not([class]) { background-color: white }</style>
+<script src="site_libs/jqueryui-1.11.4/jquery-ui.min.js"></script>
+<link href="site_libs/tocify-1.9.1/jquery.tocify.css" rel="stylesheet" />
+<script src="site_libs/tocify-1.9.1/jquery.tocify.js"></script>
+<script src="site_libs/navigation-1.1/tabsets.js"></script>
+<link href="site_libs/highlightjs-9.12.0/textmate.css" rel="stylesheet" />
+<script src="site_libs/highlightjs-9.12.0/highlight.js"></script>
+
+<link rel="icon" href="https://github.com/workflowr/workflowr-assets/raw/master/img/reproducible.png">
+<!-- Add a small amount of space between sections. -->
+<style type="text/css">
+div.section {
+  padding-top: 12px;
+}
+</style>
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+<style type="text/css">code{white-space: pre;}</style>
+<script type="text/javascript">
+if (window.hljs) {
+  hljs.configure({languages: []});
+  hljs.initHighlightingOnLoad();
+  if (document.readyState && document.readyState === "complete") {
+    window.setTimeout(function() { hljs.initHighlighting(); }, 0);
+  }
+}
+</script>
+
+
+
+
+
+
+
+
+<style type = "text/css">
+.main-container {
+  max-width: 940px;
+  margin-left: auto;
+  margin-right: auto;
+}
+img {
+  max-width:100%;
+}
+.tabbed-pane {
+  padding-top: 12px;
+}
+.html-widget {
+  margin-bottom: 20px;
+}
+button.code-folding-btn:focus {
+  outline: none;
+}
+summary {
+  display: list-item;
+}
+pre code {
+  padding: 0;
+}
+</style>
+
+
+<style type="text/css">
+.dropdown-submenu {
+  position: relative;
+}
+.dropdown-submenu>.dropdown-menu {
+  top: 0;
+  left: 100%;
+  margin-top: -6px;
+  margin-left: -1px;
+  border-radius: 0 6px 6px 6px;
+}
+.dropdown-submenu:hover>.dropdown-menu {
+  display: block;
+}
+.dropdown-submenu>a:after {
+  display: block;
+  content: " ";
+  float: right;
+  width: 0;
+  height: 0;
+  border-color: transparent;
+  border-style: solid;
+  border-width: 5px 0 5px 5px;
+  border-left-color: #cccccc;
+  margin-top: 5px;
+  margin-right: -10px;
+}
+.dropdown-submenu:hover>a:after {
+  border-left-color: #adb5bd;
+}
+.dropdown-submenu.pull-left {
+  float: none;
+}
+.dropdown-submenu.pull-left>.dropdown-menu {
+  left: -100%;
+  margin-left: 10px;
+  border-radius: 6px 0 6px 6px;
+}
+</style>
+
+<script type="text/javascript">
+// manage active state of menu based on current page
+$(document).ready(function () {
+  // active menu anchor
+  href = window.location.pathname
+  href = href.substr(href.lastIndexOf('/') + 1)
+  if (href === "")
+    href = "index.html";
+  var menuAnchor = $('a[href="' + href + '"]');
+
+  // mark it active
+  menuAnchor.tab('show');
+
+  // if it's got a parent navbar menu mark it active as well
+  menuAnchor.closest('li.dropdown').addClass('active');
+
+  // Navbar adjustments
+  var navHeight = $(".navbar").first().height() + 15;
+  var style = document.createElement('style');
+  var pt = "padding-top: " + navHeight + "px; ";
+  var mt = "margin-top: -" + navHeight + "px; ";
+  var css = "";
+  // offset scroll position for anchor links (for fixed navbar)
+  for (var i = 1; i <= 6; i++) {
+    css += ".section h" + i + "{ " + pt + mt + "}\n";
+  }
+  style.innerHTML = "body {" + pt + "padding-bottom: 40px; }\n" + css;
+  document.head.appendChild(style);
+});
+</script>
+
+<!-- tabsets -->
+
+<style type="text/css">
+.tabset-dropdown > .nav-tabs {
+  display: inline-table;
+  max-height: 500px;
+  min-height: 44px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.tabset-dropdown > .nav-tabs > li.active:before {
+  content: "";
+  font-family: 'Glyphicons Halflings';
+  display: inline-block;
+  padding: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li.active:before {
+  content: "&#xe258;";
+  border: none;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open:before {
+  content: "";
+  font-family: 'Glyphicons Halflings';
+  display: inline-block;
+  padding: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs > li.active {
+  display: block;
+}
+
+.tabset-dropdown > .nav-tabs > li > a,
+.tabset-dropdown > .nav-tabs > li > a:focus,
+.tabset-dropdown > .nav-tabs > li > a:hover {
+  border: none;
+  display: inline-block;
+  border-radius: 4px;
+  background-color: transparent;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li {
+  display: block;
+  float: none;
+}
+
+.tabset-dropdown > .nav-tabs > li {
+  display: none;
+}
+</style>
+
+<!-- code folding -->
+
+
+
+<style type="text/css">
+
+#TOC {
+  margin: 25px 0px 20px 0px;
+}
+@media (max-width: 768px) {
+#TOC {
+  position: relative;
+  width: 100%;
+}
+}
+
+@media print {
+.toc-content {
+  /* see https://github.com/w3c/csswg-drafts/issues/4434 */
+  float: right;
+}
+}
+
+.toc-content {
+  padding-left: 30px;
+  padding-right: 40px;
+}
+
+div.main-container {
+  max-width: 1200px;
+}
+
+div.tocify {
+  width: 20%;
+  max-width: 260px;
+  max-height: 85%;
+}
+
+@media (min-width: 768px) and (max-width: 991px) {
+  div.tocify {
+    width: 25%;
+  }
+}
+
+@media (max-width: 767px) {
+  div.tocify {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+.tocify ul, .tocify li {
+  line-height: 20px;
+}
+
+.tocify-subheader .tocify-item {
+  font-size: 0.90em;
+}
+
+.tocify .list-group-item {
+  border-radius: 0px;
+}
+
+
+</style>
+
+
+
+</head>
+
+<body>
+
+
+<div class="container-fluid main-container">
+
+
+<!-- setup 3col/9col grid for toc_float and main content  -->
+<div class="row">
+<div class="col-xs-12 col-sm-4 col-md-3">
+<div id="TOC" class="tocify">
+</div>
+</div>
+
+<div class="toc-content col-xs-12 col-sm-8 col-md-9">
+
+
+
+
+<div class="navbar navbar-default  navbar-fixed-top" role="navigation">
+  <div class="container">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar">
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="index.html">cacoaAnalysis</a>
+    </div>
+    <div id="navbar" class="navbar-collapse collapse">
+      <ul class="nav navbar-nav">
+        <li>
+  <a href="index.html">Home</a>
+</li>
+<li>
+  <a href="about.html">About</a>
+</li>
+<li>
+  <a href="license.html">License</a>
+</li>
+      </ul>
+      <ul class="nav navbar-nav navbar-right">
+        
+      </ul>
+    </div><!--/.nav-collapse -->
+  </div><!--/.container -->
+</div><!--/.navbar -->
+
+<div id="header">
+
+
+
+<h1 class="title toc-ignore">Cluster-free expression analysis</h1>
+<h4 class="author"><a href="https://github.com/VPetukhov/">Viktor Petukhov</a></h4>
+<h4 class="date">2021-12-27</h4>
+
+</div>
+
+
+<p>
+<button type="button" class="btn btn-default btn-workflowr btn-workflowr-report" data-toggle="collapse" data-target="#workflowr-report">
+<span class="glyphicon glyphicon-list" aria-hidden="true"></span> workflowr <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span>
+</button>
+</p>
+<div id="workflowr-report" class="collapse">
+<ul class="nav nav-tabs">
+<li class="active">
+<a data-toggle="tab" href="#summary">Summary</a>
+</li>
+<li>
+<a data-toggle="tab" href="#checks"> Checks <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> </a>
+</li>
+<li>
+<a data-toggle="tab" href="#versions">Past versions</a>
+</li>
+</ul>
+<div class="tab-content">
+<div id="summary" class="tab-pane fade in active">
+<p>
+<strong>Last updated:</strong> 2021-12-27
+</p>
+<p>
+<strong>Checks:</strong> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> 7 <span class="glyphicon glyphicon-exclamation-sign text-danger" aria-hidden="true"></span> 0
+</p>
+<p>
+<strong>Knit directory:</strong> <code>cacoaAnalysis/</code> <span class="glyphicon glyphicon-question-sign" aria-hidden="true" title="This is the local directory in which the code in this file was executed."> </span>
+</p>
+<p>
+This reproducible <a href="http://rmarkdown.rstudio.com">R Markdown</a> analysis was created with <a
+  href="https://github.com/jdblischak/workflowr">workflowr</a> (version 1.6.2). The <em>Checks</em> tab describes the reproducibility checks that were applied when the results were created. The <em>Past versions</em> tab lists the development history.
+</p>
+<hr>
+</div>
+<div id="checks" class="tab-pane fade">
+<div id="workflowr-checks" class="panel-group">
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongRMarkdownfilestronguptodate"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>R Markdown file:</strong> up-to-date </a>
+</p>
+</div>
+<div id="strongRMarkdownfilestronguptodate" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great! Since the R Markdown file has been committed to the Git repository, you know the exact version of the code that produced these results.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongEnvironmentstrongempty"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Environment:</strong> empty </a>
+</p>
+</div>
+<div id="strongEnvironmentstrongempty" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! The global environment was empty. Objects defined in the global environment can affect the analysis in your R Markdown file in unknown ways. For reproduciblity it's best to always run the code in an empty environment.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongSeedstrongcodesetseed20211123code"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Seed:</strong> <code>set.seed(20211123)</code> </a>
+</p>
+</div>
+<div id="strongSeedstrongcodesetseed20211123code" class="panel-collapse collapse">
+<div class="panel-body">
+<p>The command <code>set.seed(20211123)</code> was run prior to running the code in the R Markdown file. Setting a seed ensures that any results that rely on randomness, e.g. subsampling or permutations, are reproducible.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongSessioninformationstrongrecorded"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Session information:</strong> recorded </a>
+</p>
+</div>
+<div id="strongSessioninformationstrongrecorded" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! Recording the operating system, R version, and package versions is critical for reproducibility.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongCachestrongnone"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Cache:</strong> none </a>
+</p>
+</div>
+<div id="strongCachestrongnone" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Nice! There were no cached chunks for this analysis, so you can be confident that you successfully produced the results during this run.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongFilepathsstrongrelative"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>File paths:</strong> relative </a>
+</p>
+</div>
+<div id="strongFilepathsstrongrelative" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! Using relative paths to the files within your workflowr project makes it easier to run your code on other machines.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongRepositoryversionstrongahrefhttpsgithubcomkharchenkolabcacoaAnalysistreec4d4786b71ce7ccd2f6bcb95756bf43e5cdef649targetblankc4d4786a"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Repository version:</strong> <a href="https://github.com/kharchenkolab/cacoaAnalysis/tree/c4d4786b71ce7ccd2f6bcb95756bf43e5cdef649" target="_blank">c4d4786</a> </a>
+</p>
+</div>
+<div id="strongRepositoryversionstrongahrefhttpsgithubcomkharchenkolabcacoaAnalysistreec4d4786b71ce7ccd2f6bcb95756bf43e5cdef649targetblankc4d4786a" class="panel-collapse collapse">
+<div class="panel-body">
+<p>
+Great! You are using Git for version control. Tracking code development and connecting the code version to the results is critical for reproducibility.
+</p>
+<p>
+The results in this page were generated with repository version <a href="https://github.com/kharchenkolab/cacoaAnalysis/tree/c4d4786b71ce7ccd2f6bcb95756bf43e5cdef649" target="_blank">c4d4786</a>. See the <em>Past versions</em> tab to see a history of the changes made to the R Markdown and HTML files.
+</p>
+<p>
+Note that you need to be careful to ensure that all relevant files for the analysis have been committed to Git prior to generating the results (you can use <code>wflow_publish</code> or <code>wflow_git_commit</code>). workflowr only checks the R Markdown file, but you know if there are other scripts or data files that it depends on. Below is the status of the Git repository when the results were generated:
+</p>
+<pre><code>
+Ignored files:
+    Ignored:    .Rhistory
+    Ignored:    .Rproj.user/
+    Ignored:    analysis/.Rhistory
+    Ignored:    analysis/figure_cluster_based_de_bio.nb.html
+    Ignored:    analysis/figure_cluster_free_expression.nb.html
+    Ignored:    analysis/figure_compositional.nb.html
+    Ignored:    analysis/figure_compositional_cf.nb.html
+    Ignored:    analysis/figure_expression_shifts.nb.html
+    Ignored:    analysis/figure_interpretation.nb.html
+    Ignored:    analysis/prepare_cacoa_results.nb.html
+    Ignored:    analysis/preprocess.nb.html
+    Ignored:    analysis/report_asd.nb.html
+    Ignored:    analysis/report_az.nb.html
+    Ignored:    analysis/report_ep.nb.html
+    Ignored:    analysis/report_ms.nb.html
+    Ignored:    analysis/report_pf.nb.html
+    Ignored:    analysis/report_scc.nb.html
+    Ignored:    analysis/simulation_distances.nb.html
+    Ignored:    analysis/simulation_variance.nb.html
+    Ignored:    cache/
+    Ignored:    data/ASD/
+    Ignored:    data/AZ/
+    Ignored:    data/EP/
+    Ignored:    data/MS/
+    Ignored:    data/PF/
+    Ignored:    data/SCC/
+    Ignored:    man/
+    Ignored:    output/figures/
+
+</code></pre>
+<p>
+Note that any generated files, e.g. HTML, png, CSS, etc., are not included in this status report because it is ok for generated content to have uncommitted changes.
+</p>
+</div>
+</div>
+</div>
+</div>
+<hr>
+</div>
+<div id="versions" class="tab-pane fade">
+
+<p>
+These are the previous versions of the repository in which changes were made to the R Markdown (<code>analysis/figure_cluster_free_expression.Rmd</code>) and HTML (<code>docs/figure_cluster_free_expression.html</code>) files. If you've configured a remote Git repository (see <code>?wflow_git_remote</code>), click on the hyperlinks in the table below to view the files as they were in that past version.
+</p>
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+File
+</th>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+<th>
+Message
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Rmd
+</td>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/eafb34e3cf31467943b067f2e4d84e2f55a1e003/analysis/figure_cluster_free_expression.Rmd" target="_blank">eafb34e</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-27
+</td>
+<td>
+Updated cluster-free expression figures
+</td>
+</tr>
+<tr>
+<td>
+Rmd
+</td>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/48929ddba7163cc62d2f4c88f6ca6ecbae74eb68/analysis/figure_cluster_free_expression.Rmd" target="_blank">48929dd</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-22
+</td>
+<td>
+Cluster-free expression figure
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<hr>
+</div>
+</div>
+</div>
+<pre class="r"><code>library(tidyverse)
+library(magrittr)
+library(conos)
+library(cowplot)
+library(cacoa)
+library(sccore)
+library(dataorganizer)
+library(ggrastr)
+
+options(ggrastr.default.dpi=100)
+rast &lt;- function(...) rasterise(..., dev=&quot;ragg_png&quot;)
+
+devtools::load_all()
+
+theme_set(theme_bw())
+N_CORES &lt;- 50
+
+score_palette &lt;- brewerPalette(&quot;YlOrRd&quot;, rev=FALSE)</code></pre>
+<div id="cluster-free-shifts-pf" class="section level2">
+<h2>Cluster-free shifts, PF</h2>
+<pre class="r"><code>cao_pf &lt;- read_rds(DataPath(&quot;PF/cao.rds&quot;)) %&gt;% Cacoa$new()</code></pre>
+<pre class="r"><code>cao_endo &lt;- readOrCreate(CachePath(&quot;cao_pf_endo.rds&quot;), function() {
+  cms_endo &lt;- lapply(cao_pf$data.object$samples, function(p2) {
+    p2$misc$rawCounts %&gt;% .[cao_pf$cell.groups[rownames(.)] == &quot;Endothelial Cells&quot;,] %&gt;% t()
+  }) %&gt;% .[sapply(., ncol) &gt; 80]
+  
+  p2s_endo &lt;- plapply(cms_endo, createPagoda, n.pcs=50, n.cores=N_CORES, progress=TRUE, 
+                      mc.preschedule=TRUE)
+  if (&quot;value&quot; %in% names(p2s_endo)) p2s_endo &lt;- p2s_endo$value
+  
+  con_endo &lt;- conos::Conos$new(p2s_endo, n.cores=N_CORES)
+  con_endo$buildGraph(k=30, k.self.weight=0.5)
+  con_endo$embedGraph(min.prob.lower=1e-4, method=&quot;UMAP&quot;, verbose=FALSE)
+  con_endo$findCommunities(method=leiden.community, resolution=1, n.iterations=10, name=&#39;leiden&#39;)
+  
+  endo_cluster_ann &lt;- c(
+    &quot;general capillary&quot;, # (AFF3, BTNL9)
+    &quot;arterial&quot;, # (DKK2)
+    &quot;systemic-venous&quot;, # (COL15A1)
+    &quot;pulmonary-venous&quot;, # (CPE)
+    &quot;aerocyte&quot; # (EDNRB)
+  )
+  
+  clusts &lt;- con_endo$clusters$leiden$groups
+  ann_per_clust &lt;- con_endo$samples[[1]]$counts[,c(&quot;AFF3&quot;, &quot;DKK2&quot;, &quot;COL15A1&quot;, &quot;CPE&quot;, &quot;EDNRB&quot;)] %&gt;% 
+    collapseCellsByType(clusts) %&gt;% 
+    {t(.) / colSums(.)} %&gt;% t() %&gt;% 
+    apply(1, which.max) %&gt;% endo_cluster_ann[.]
+  ann_endo &lt;- setNames(ann_per_clust[clusts], names(clusts))
+  
+  cao_endo &lt;- Cacoa$new(
+    con_endo, cell.groups=ann_endo, 
+    sample.groups=cao_pf$sample.groups[names(con_endo$samples)], 
+    ref.level=cao_pf$ref.level, target.level=cao_pf$target.level, n.cores=N_CORES
+  )
+  cao_endo$plot.theme %&lt;&gt;% `+`(theme(legend.background=element_blank()))
+  
+  cao_endo$estimateDEPerCellType(independent.filtering=TRUE, test=&quot;DESeq2.Wald&quot;)
+  return(cao_endo)
+})
+
+cao_endo$plotEmbedding(color.by=&#39;cell.groups&#39;)</code></pre>
+<p><img src="figure/figure_cluster_free_expression.Rmd/unnamed-chunk-2-1.png" width="384" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>leg_theme &lt;- theme(legend.key.width=unit(12, &quot;pt&quot;), legend.key.height=unit(14, &quot;pt&quot;))
+
+ggs_pf &lt;- cao_pf$plotClusterFreeExpressionShifts(
+  legend.position=c(0, 1), size=0.1, alpha=0.1, cell.groups=NULL, build.panel=FALSE,
+  adj.list=leg_theme
+)
+
+p_lims &lt;- getCellTypeEmbeddingLimits(
+  cao_pf$embedding, cell.groups=cao_pf$cell.groups, groups.to.plot=&quot;Endothelial Cells&quot;, quant=0.005
+)
+
+gg_endo &lt;- cao_pf$plotClusterFreeExpressionShifts(
+  legend.position=c(1, 1), size=0.3, alpha=1, cell.groups=NULL, build.panel=FALSE,
+)[[1]] + lims(x=p_lims$x, y=p_lims$y) + leg_theme
+
+# ggs_pf[[1]] %&lt;&gt;% transferLabelLayer(cao_pf$plotEmbedding(color.by=&#39;cell.groups&#39;), font.size=2)
+gg_endo %&lt;&gt;% cacoa:::transferLabelLayer(cao_pf$plotEmbedding(groups=cao_endo$cell.groups), font.size=3)
+
+plot_grid(plotlist=c(ggs_pf, list(gg_endo)), ncol=3)</code></pre>
+<p><img src="figure/figure_cluster_free_expression.Rmd/unnamed-chunk-3-1.png" width="1152" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>end_mt_genes &lt;- c(&quot;FN1&quot;, &quot;S100A4&quot;) # endothelial-to-mesenchymal transition
+t_sub_cm &lt;- cao_endo$cache$joint.count.matrix[,end_mt_genes]
+expr_df &lt;- cao_endo$sample.per.cell %&gt;% {split(names(.), .)} %&gt;% 
+  lapply(function(samp.cbs) {
+    lapply(split(samp.cbs, cao_endo$cell.groups[samp.cbs]), function(cg.cbs) {
+      tibble(expr=colMeans(t_sub_cm[cg.cbs,,drop=FALSE]), gene=colnames(t_sub_cm))
+    }) %&gt;% bind_rows(.id=&quot;Type&quot;)
+  }) %&gt;% bind_rows(.id=&quot;Sample&quot;) %&gt;% 
+  mutate(Condition=cao_endo$sample.groups[Sample])
+
+p_df &lt;- lapply(cao_endo$test.results$de, function(de) {
+  de$res[colnames(t_sub_cm),] %&gt;% 
+    select(Gene, pvalue) %&gt;% as_tibble()
+}) %&gt;% 
+  bind_rows(.id=&#39;Type&#39;) %&gt;% 
+  mutate(padj=p.adjust(pvalue, method=&#39;BH&#39;), Type=stringr::str_wrap(Type, width=6))
+
+expr_df$Type %&lt;&gt;% stringr::str_wrap(width=6) %&gt;% as.factor()
+ggs_box_endo &lt;- split(expr_df, expr_df$gene) %&gt;% lapply(function(df) {
+  pvals &lt;- filter(p_df, Gene == df$gene[1]) %$% setNames(padj, Type)
+  pval.df &lt;- cacoa:::pvalueToCode(pvals, ns.symbol=&quot;&quot;) %&gt;%
+    tibble(Type=factor(names(.), levels=levels(df$Type)), pvalue=.) %&gt;% na.omit()
+  
+  pvalue.y &lt;- 1.01 * max(df$expr, na.rm=TRUE)
+  ggplot(df) + 
+    geom_boxplot(aes(x=Type, y=expr, fill=Condition), outlier.alpha=0) +
+    ggbeeswarm::geom_quasirandom(aes(x=Type, y=expr, group=Condition), width=0.1, dodge.width=0.75, size=0.5) +
+    geom_text(data=pval.df, mapping=aes(x=Type, label=pvalue), y=pvalue.y, color=&quot;black&quot;) +
+    scale_y_continuous(limits=c(0, 1.1 * pvalue.y), expand=c(0, 0), name=paste(df$gene[1], &quot;expression&quot;)) +
+    scale_fill_manual(values=cao_endo$sample.groups.palette) +
+    cao_endo$plot.theme + theme_legend_position(c(1, 0.9)) +
+    theme(
+      legend.background=element_blank(), 
+      axis.title.x=element_blank(), axis.line.y.left=element_line(size=0.25), axis.line.x.bottom=element_line(size=0.25), 
+      panel.border=element_blank(), panel.grid.major.x=element_blank(), panel.grid.minor.y=element_blank()
+    )
+})
+
+ggs_box_endo[[1]] %&lt;&gt;% {. + theme(legend.position=&quot;none&quot;)}
+
+plot_grid(plotlist=ggs_box_endo, ncol=2)</code></pre>
+<p><img src="figure/figure_cluster_free_expression.Rmd/unnamed-chunk-4-1.png" width="816" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>leg_theme &lt;- theme(legend.key.width=unit(10, &quot;pt&quot;), legend.key.height=unit(12, &quot;pt&quot;), legend.text=element_text(size=8))
+p_embs &lt;- c(ggs_pf, list(gg_endo)) %&gt;% lapply(`+`, leg_theme) %&gt;% rast()
+
+scale &lt;- 0.97
+plot_grid(
+  plot_grid(plotlist=p_embs, ncol=3, scale=scale),
+  plot_grid(plotlist=ggs_box_endo, ncol=2, scale=scale),
+  ncol=1, rel_heights=c(1, 0.6), scale=scale
+)</code></pre>
+<p><img src="figure/figure_cluster_free_expression.Rmd/unnamed-chunk-5-1.png" width="816" style="display: block; margin: auto;" /></p>
+</div>
+<div id="cluster-free-de-epilepsy" class="section level2">
+<h2>Cluster-free DE, Epilepsy</h2>
+<pre class="r"><code>cao_ep &lt;- read_rds(DataPath(&quot;EP/cao.rds&quot;)) %&gt;% Cacoa$new()
+cao_ep$plot.params &lt;- list(size=0.1, alpha=0.1, font.size=c(2, 3), legend.position=c(0, 1))
+
+org.db &lt;- org.Hs.eg.db::org.Hs.eg.db
+go.environment &lt;- cao_ep$getGOEnvironment(org.db, verbose=TRUE, ignore.cache=FALSE)
+
+cao_ep$plotEmbedding(color.by=&#39;cell.groups&#39;)</code></pre>
+<p><img src="figure/figure_cluster_free_expression.Rmd/unnamed-chunk-6-1.png" width="384" style="display: block; margin: auto;" /></p>
+<div id="global-programs" class="section level3">
+<h3>Global programs</h3>
+<pre class="r"><code>cao_ep$estimateGenePrograms(method=&quot;leiden&quot;, z.adj=TRUE, smooth=TRUE, n.top.genes=1000,
+                            resolution=1, abs.scores=TRUE, min.z=0.5)</code></pre>
+<pre class="r"><code>cao_ep$plotGeneProgramScores(plot.na=FALSE)</code></pre>
+<p><img src="figure/figure_cluster_free_expression.Rmd/unnamed-chunk-8-1.png" width="1152" style="display: block; margin: auto;" /></p>
+<p>Gene program genes:</p>
+<pre class="r"><code>prog_id &lt;- 2
+# cao_ep$plotGeneProgramGenes(prog_id, ordering=&quot;similarity&quot;, max.genes=9, plot.na=FALSE) %&gt;% 
+#   plot_grid(plotlist=., ncol=3)
+cao_ep$test.results$gene.programs$sim.scores[[prog_id]] %&gt;% {tibble(Gene=names(.), Score=.)}</code></pre>
+<pre><code># A tibble: 177 x 2
+   Gene   Score
+   &lt;chr&gt;  &lt;dbl&gt;
+ 1 NEGR1  0.951
+ 2 MAGI2  0.949
+ 3 EFNA5  0.948
+ 4 FBXL17 0.946
+ 5 SHISA9 0.944
+ 6 HIVEP2 0.944
+ 7 GLS    0.940
+ 8 CADPS2 0.940
+ 9 CELF5  0.939
+10 AKT3   0.937
+# ... with 167 more rows</code></pre>
+<pre class="r"><code>ggs_shisa9 &lt;- cao_ep$plotGeneExpressionComparison(
+  genes=&quot;SHISA9&quot;, gene.palette=brewerPalette(&#39;YlOrRd&#39;, rev=FALSE), plot.na=FALSE, 
+  build.panel=FALSE, plots=c(&quot;expression&quot;, &quot;z&quot;, &quot;z.adj&quot;)
+) %&gt;% .[c(3, 4, 1, 2)]
+
+plot_grid(plotlist=ggs_shisa9, nrow=1)</code></pre>
+<p><img src="figure/figure_cluster_free_expression.Rmd/unnamed-chunk-10-1.png" width="1536" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>ex_cells &lt;- cao_ep$cell.groups %&gt;% .[grep(&quot;^L.*&quot;, .)] %&gt;% names()
+gene_universe_global &lt;- which(colMeans(cao_ep$cache$joint.count.matrix[ex_cells,] &gt; 0) &gt; 0.1) %&gt;% 
+  names() %&gt;% cacoa:::mapGeneIds(org.db)
+
+length(gene_universe_global)</code></pre>
+<pre><code>[1] 6477</code></pre>
+<pre class="r"><code>go_global &lt;- cao_ep$test.results$gene.programs$sim.scores[[prog_id]] %&gt;%
+  head(100) %&gt;% names() %&gt;% cacoa:::mapGeneIds(org.db) %&gt;% list() %&gt;%
+  cacoa:::estimateEnrichedGO(org.db=org.db, go.environment=go.environment,
+                             universe=gene_universe_global, readable=TRUE) %&gt;%
+  lapply(`[[`, 1)
+
+gg_godot_global &lt;- clusteredOntologyDotplot(go_global$BP, min.genes=5) +
+  scale_size_continuous(range=c(1, 5), limits=c(5, 25), breaks=c(5, 10, 20, 25)) + 
+  xlab(&quot;Gene ratio&quot;) +
+  theme_legend_position(c(1, 0)) + 
+  theme(legend.background=element_blank(), legend.box=&quot;horizontal&quot;, axis.text.y=element_text(size=11),
+        legend.key.height=unit(8, &quot;pt&quot;), legend.key.width=unit(8, &quot;pt&quot;),
+        plot.title=element_blank())
+gg_godot_global</code></pre>
+<p><img src="figure/figure_cluster_free_expression.Rmd/unnamed-chunk-12-1.png" width="480" style="display: block; margin: auto;" /></p>
+</div>
+<div id="local-programs" class="section level3">
+<h3>Local programs</h3>
+<pre class="r"><code>p_type &lt;- &quot;L2_Cux2_Lamp5&quot;
+cell_subset &lt;- cao_ep$cell.groups %&gt;% .[. == p_type] %&gt;% names()
+genes &lt;- cao_ep$getMostChangedGenes(200, method=&quot;z.adj&quot;, cell.subset=cell_subset)
+cao_ep$estimateGenePrograms(
+  name=&quot;gp.local&quot;, genes=names(genes), method=&quot;pam&quot;, z.adj=TRUE, smooth=FALSE, 
+  cell.subset=cell_subset, n.programs=4, abs.scores=TRUE, min.z=1
+)</code></pre>
+<pre class="r"><code>local_prog_genes &lt;- c(&#39;CADM1&#39;, &#39;CAMK2D&#39;, &#39;CADPS2&#39;, &#39;NTRK2&#39;)
+sapply(cao_ep$test.results$gp.local$sim.scores, function(sc) 
+  setNames(local_prog_genes %in% names(sc), local_prog_genes))</code></pre>
+<pre><code>        [,1]  [,2]  [,3]  [,4]
+CADM1  FALSE  TRUE FALSE FALSE
+CAMK2D FALSE  TRUE FALSE FALSE
+CADPS2  TRUE FALSE FALSE FALSE
+NTRK2   TRUE FALSE FALSE FALSE</code></pre>
+<pre class="r"><code>cont &lt;- cao_ep$.__enclos_env__$private$getDensityContours(p_type, color=&quot;black&quot;, conf=&quot;10%&quot;)[[1]]
+loc_lims &lt;- getCellTypeEmbeddingLimits(cao_ep$embedding, cao_ep$cell.groups, groups.to.plot=p_type, 
+                                       quant=0.01)
+
+adj_list &lt;- list(cont, lims(x=loc_lims$x, y=loc_lims$y))
+
+cao_ep$plotGeneProgramScores(
+  name=&quot;gp.local&quot;, plot.na=FALSE, adj.list=adj_list, build.panel=FALSE, 
+  palette=score_palette, alpha=0.25
+) %&gt;% plot_grid(plotlist=., nrow=1)</code></pre>
+<p><img src="figure/figure_cluster_free_expression.Rmd/unnamed-chunk-15-1.png" width="960" style="display: block; margin: auto;" /></p>
+<pre class="r"><code># cao_ep$test.results$gp.local$sim.scores[[1]] %&gt;% head(16) %&gt;% 
+#   cao_ep$plotGeneExpressionComparison(scores=., plots=&quot;z.adj&quot;, plot.na=FALSE, alpha=0.5) %&gt;% 
+#   lapply(`+`, adj_list) %&gt;% 
+#   plot_grid(plotlist=., ncol=4)
+
+cao_ep$test.results$gp.local$sim.scores[[1]] %&gt;% {tibble(Gene=names(.), Score=.)}</code></pre>
+<pre><code># A tibble: 28 x 2
+   Gene          Score
+   &lt;chr&gt;         &lt;dbl&gt;
+ 1 PLCB1         0.914
+ 2 GRIA2         0.910
+ 3 PPP3CA        0.909
+ 4 KCND2         0.906
+ 5 ATP2B1        0.906
+ 6 ERC2          0.888
+ 7 ITPR1         0.869
+ 8 RP11-701H24.9 0.862
+ 9 NTRK2         0.859
+10 EFNA5         0.838
+# ... with 18 more rows</code></pre>
+<pre class="r"><code>cao_ep$test.results$gp.local$sim.scores[[2]] %&gt;% {tibble(Gene=names(.), Score=.)}</code></pre>
+<pre><code># A tibble: 54 x 2
+   Gene      Score
+   &lt;chr&gt;     &lt;dbl&gt;
+ 1 CALN1     0.847
+ 2 LINC00486 0.845
+ 3 MAPT      0.844
+ 4 FAM153B   0.834
+ 5 PDE4DIP   0.832
+ 6 SSH2      0.830
+ 7 LARGE     0.820
+ 8 ADGRL2    0.818
+ 9 CELF4     0.817
+10 CADM1     0.817
+# ... with 44 more rows</code></pre>
+<pre class="r"><code>gene_universe_local &lt;- colMeans(cao_ep$cache$joint.count.matrix[cell_subset,] &gt; 0) %&gt;% 
+  {which(. &gt; 0.1)} %&gt;% names() %&gt;% cacoa:::mapGeneIds(org.db)
+
+length(gene_universe_local)</code></pre>
+<pre><code>[1] 6159</code></pre>
+<pre class="r"><code>go_local &lt;- cao_ep$test.results$gp.local$sim.scores %&gt;% 
+  lapply(function(x) head(names(x)[x &gt; 0.5], 20)) %&gt;%
+  lapply(cacoa:::mapGeneIds, org.db) %&gt;% 
+  cacoa:::estimateEnrichedGO(org.db=org.db, go.environment=go.environment, readable=TRUE,
+                             universe=gene_universe_local)
+
+sapply(go_local$BP, function(r) sum(r@result$p.adjust &lt; 0.05)) %&gt;% setNames(1:length(.))</code></pre>
+<pre><code>  1   2   3   4 
+ 69   0 128   0 </code></pre>
+<pre class="r"><code>gg_godot_local &lt;- clusteredOntologyDotplot(go_local$BP[[1]], min.genes=4) +
+  scale_size_continuous(range=c(1, 5), limits=c(4, 7), breaks=c(4, 6, 7)) +
+  xlab(&quot;Gene ratio&quot;) +
+  guides(color=guide_none()) +
+  theme_legend_position(c(1, 0)) + 
+  theme(legend.background=element_blank(), legend.box=&quot;horizontal&quot;, axis.text.y=element_text(size=11),
+        legend.key.height=unit(8, &quot;pt&quot;), legend.key.width=unit(8, &quot;pt&quot;), plot.title=element_blank())
+gg_godot_local</code></pre>
+<p><img src="figure/figure_cluster_free_expression.Rmd/unnamed-chunk-19-1.png" width="480" style="display: block; margin: auto;" /></p>
+<pre class="r"><code># cao_ep$plotGeneExpressionComparison(
+#   genes=c(&#39;CADM1&#39;, &#39;CAMK2D&#39;, &#39;CADPS2&#39;, &#39;NTRK2&#39;),
+#   plot.na=FALSE, gene.palette=score_palette,
+#   size=0.2, alpha=0.2#, adj.list=lims(x=c(7, 27), y=c(15, 37))
+# )</code></pre>
+</div>
+<div id="figure" class="section level3">
+<h3>Figure</h3>
+<pre class="r"><code>cont &lt;- cao_ep$.__enclos_env__$private$getDensityContours(&quot;L2_Cux2_Lamp5&quot;, color=&quot;black&quot;, conf=&quot;10%&quot;)[[1]]</code></pre>
+<div id="global" class="section level4">
+<h4>Global</h4>
+<pre class="r"><code># cao_ep$plotEmbedding(color.by=&#39;cell.groups&#39;, show.ticks=TRUE) +
+#   scale_x_continuous(limits=c(-12, 70), expand=c(0, 0))</code></pre>
+<pre class="r"><code>prog_id &lt;- 2
+prog_genes &lt;- cao_ep$test.results$gene.programs$loading.scores[[prog_id]]
+prog_cells &lt;- cao_ep$test.results$gene.programs$program.scores[prog_id,] %&gt;% {names(.)[. &gt; 0.1]}
+prog_genes &lt;- cao_ep$test.results$cluster.free.de$z.adj[prog_cells, names(prog_genes)] %&gt;% 
+  colMeans(na.rm=TRUE) %&gt;% sign() %&gt;% {split(prog_genes, .)} %&gt;% setNames(c(&quot;neg&quot;, &quot;pos&quot;))
+
+# p_genes &lt;- c(prog_genes$pos[1:2], prog_genes$neg[1:2]) %&gt;% names()
+glob_genes &lt;- names(prog_genes$pos[3]) %&gt;% c(&#39;NCAM2&#39;, &#39;GABRB2&#39;, &#39;EFNA5&#39;)
+ggs &lt;- cao_ep$plotGeneExpressionComparison(genes=glob_genes, plots=&quot;z.adj&quot;,legend.position=&quot;none&quot;, plot.na=FALSE)
+
+en_x_lims &lt;- c(-12, 70)
+ggs[[1]] &lt;- ggs[[1]] + theme_legend_position(c(0, 1)) + 
+  theme(legend.key.height=unit(12, &quot;pt&quot;), legend.key.width=unit(12, &quot;pt&quot;))
+
+theme_gene &lt;- theme(plot.title=element_blank(), panel.grid.minor.x=element_blank())
+
+# gg_global_genes &lt;- ggs %&gt;% lapply(`+`, list(xlim(en_x_lims), theme_gene)) %&gt;%
+#   plot_grid(plotlist=., ncol=4, labels=glob_genes, label_fontface=&quot;plain&quot;, 
+#             hjust=0, label_x=0.04, label_size=12, label_y=0.1)
+
+ggs_global_genes &lt;- ggs %&gt;% lapply(`+`, list(xlim(en_x_lims), theme_gene))
+
+gg_prog_score &lt;- cao_ep$plotGeneProgramScores(prog.ids=prog_id, legend.position=c(0, 1), 
+                                              plot.na=FALSE, palette=score_palette) +
+  cont + theme(plot.title=element_blank(), legend.key.height=unit(12, &quot;pt&quot;), legend.key.width=unit(12, &quot;pt&quot;))
+
+plot_grid(plotlist=c(list(gg_prog_score), ggs_global_genes), nrow=1, rel_widths=c(2, 1, 1, 1, 1))</code></pre>
+<p><img src="figure/figure_cluster_free_expression.Rmd/unnamed-chunk-23-1.png" width="864" style="display: block; margin: auto;" /></p>
+</div>
+<div id="local" class="section level4">
+<h4>Local</h4>
+<pre class="r"><code>adj_list &lt;- list(
+  scale_x_continuous(limits=loc_lims$x, expand=c(0, 0)),
+  scale_y_continuous(limits=loc_lims$y, expand=c(0, 0)),
+  theme(plot.title=element_blank(), panel.grid.minor.x=element_blank()),
+  cont
+)
+
+ggs_ls &lt;- cao_ep$plotGeneProgramScores(
+  prog.ids=c(1, 2), name=&quot;gp.local&quot;, plot.na=FALSE, legend.position=&quot;none&quot;, 
+  color.range=c(0, 2), build.panel=FALSE, adj.list=adj_list, palette=score_palette
+)
+
+ggs_local_genes &lt;- cao_ep$plotGeneExpressionComparison(
+  genes=local_prog_genes, plots=&quot;z.adj&quot;,legend.position=&quot;none&quot;, plot.na=FALSE, adj.list=adj_list,
+  alpha=0.25
+) %&gt;% setNames(local_prog_genes)</code></pre>
+<pre class="r"><code>plot_grid(
+  plotlist=c(ggs_ls, ggs_local_genes),
+  nrow=1,
+  labels=c(&quot;&quot;, &quot;&quot;, names(ggs_local_genes)), 
+  label_fontface=&quot;plain&quot;, hjust=0, label_x=0.04, label_size=12, label_y=0.2
+)</code></pre>
+<p><img src="figure/figure_cluster_free_expression.Rmd/unnamed-chunk-25-1.png" width="768" style="display: block; margin: auto;" /></p>
+</div>
+</div>
+</div>
+<div id="compile-main-figure" class="section level2">
+<h2>Compile main figure</h2>
+<pre class="r"><code>leg_theme &lt;- theme(
+  plot.title=element_blank(), legend.key.width=unit(6, &quot;pt&quot;), legend.key.height=unit(8, &quot;pt&quot;),
+  legend.text=element_text(size=8)
+) + theme_legend_position(c(0, 0))
+
+
+p_embs &lt;- c(ggs_pf, list(gg_endo)) %&gt;% 
+  lapply(`+`, leg_theme + theme_legend_position(c(0, 1)))
+
+scale &lt;- 0.95
+
+sg_ggs &lt;- lapply(ggs_shisa9, `+`, list(xlim(en_x_lims), leg_theme))
+sg_ggs[[2]] %&lt;&gt;% {. + theme(legend.position=&quot;none&quot;)}
+
+ggs_global_genes[[1]] %&lt;&gt;% {. + leg_theme}
+
+plot_grid(
+  plot_grid(
+    plot_grid(plotlist=rast(p_embs), ncol=3, scale=scale),
+    plot_grid(plotlist=ggs_box_endo, ncol=2, scale=scale),
+    ncol=1, rel_heights=c(1, 0.6), scale=scale
+  ),
+  plot_grid(plotlist=rast(c(
+    list(cao_ep$plotEmbedding(color.by=&#39;cell.groups&#39;, font.size=2)), sg_ggs,
+    list(gg_prog_score + leg_theme), ggs_global_genes,
+    list(plot_grid(plotlist=rast(ggs_ls), ncol=2)), ggs_local_genes
+    )), 
+    labels=c(
+      &quot;&quot;, &quot;SHISA9, Control&quot;, &quot;SHISA9, Epilepsy&quot;, &quot;&quot;, &quot;&quot;,
+      &quot;&quot;, glob_genes,
+      &quot;&quot;, names(ggs_local_genes)),
+    label_fontface=&quot;italic&quot;, hjust=0, label_x=0.07, label_y=0.98, label_size=11,
+    nrow=3, ncol=5, rel_widths=c(2, 1, 1, 1, 1), rel_heights=c(2, 2, 1), scale=scale * 0.98
+  ),
+  ncol=1, rel_heights=c(4.2, 11 - 4.2)
+)</code></pre>
+<p><img src="figure/figure_cluster_free_expression.Rmd/unnamed-chunk-26-1.png" width="816" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>ggsave(figurePath(&quot;6_de_cf.pdf&quot;))</code></pre>
+</div>
+<div id="compile-supp.-figure" class="section level2">
+<h2>Compile supp. figure</h2>
+<pre class="r"><code>scale &lt;- 0.95
+
+leg_theme &lt;- theme(legend.key.width=unit(12, &quot;pt&quot;), legend.key.height=unit(14, &quot;pt&quot;))
+
+theme_go &lt;- theme(
+  axis.text.y=element_text(size=10), plot.title=element_blank(), plot.margin=margin()
+)
+
+score_theme &lt;- theme(
+  plot.title=element_blank(), 
+  legend.key.width=unit(10, &quot;pt&quot;), legend.key.height=unit(10, &quot;pt&quot;)
+)
+
+ggs_glob_scores &lt;- cao_ep$plotGeneProgramScores(
+  plot.na=FALSE, prog.ids=2:9, adj.list=score_theme,
+  build.panel=FALSE
+)
+
+plot_grid(
+  plot_grid(
+    plotlist=rast(ggs_glob_scores), ncol=4, scale=0.98
+  ),
+  plot_grid(
+    plot_grid(
+      gg_godot_global + theme_go + theme(plot.margin=margin(t=-2)),
+      gg_godot_local + theme_go,
+      ncol=1, rel_heights=c(2.5, 1), align=&quot;v&quot;, scale=scale
+    ),
+    plot_grid(
+      rast(cao_ep$plotDiffCellDensity(name=&#39;cell.density.graph&#39;, type=&#39;subtract&#39;, color.range=c(&quot;1%&quot;, &quot;99%&quot;))) +
+        leg_theme,
+      rast(cao_ep$plotDiffCellDensity(name=&#39;cell.density.graph&#39;, type=&#39;wilcox&#39;)) + leg_theme,
+      ncol=1, scale=scale
+    ),
+    nrow=1, rel_widths=c(2, 1)
+  ),
+  ncol=1, rel_heights=c(4.4, 5.6), scale=0.97
+)</code></pre>
+<p><img src="figure/figure_cluster_free_expression.Rmd/unnamed-chunk-27-1.png" width="816" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>ggsave(figurePath(&quot;6s_de_cf.pdf&quot;))</code></pre>
+<br>
+<p>
+<button type="button" class="btn btn-default btn-workflowr btn-workflowr-sessioninfo" data-toggle="collapse" data-target="#workflowr-sessioninfo" style="display: block;">
+<span class="glyphicon glyphicon-wrench" aria-hidden="true"></span> Session information
+</button>
+</p>
+<div id="workflowr-sessioninfo" class="collapse">
+<pre class="r"><code>sessionInfo()</code></pre>
+<pre><code>R version 4.0.3 (2020-10-10)
+Platform: x86_64-pc-linux-gnu (64-bit)
+Running under: Ubuntu 18.04.6 LTS
+
+Matrix products: default
+BLAS:   /usr/local/R/R-4.0.3/lib/R/lib/libRblas.so
+LAPACK: /usr/local/R/R-4.0.3/lib/R/lib/libRlapack.so
+
+locale:
+[1] C
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+ [1] cacoaAnalysis_0.1.0 ggrastr_1.0.1       dataorganizer_0.1.0
+ [4] sccore_1.0.1        cacoa_0.2.0         cowplot_1.1.1      
+ [7] conos_1.4.4         igraph_1.2.6        Matrix_1.2-18      
+[10] magrittr_2.0.1      forcats_0.5.1       stringr_1.4.0      
+[13] dplyr_1.0.7         purrr_0.3.4         readr_1.4.0        
+[16] tidyr_1.1.4         tibble_3.1.5        ggplot2_3.3.5      
+[19] tidyverse_1.3.0     workflowr_1.6.2    
+
+loaded via a namespace (and not attached):
+  [1] utf8_1.2.2             ks_1.13.1              reticulate_1.22       
+  [4] R.utils_2.10.1         tidyselect_1.1.1       RSQLite_2.2.8         
+  [7] AnnotationDbi_1.52.0   BiocParallel_1.24.1    grid_4.0.3            
+ [10] Rtsne_0.15             scatterpie_0.1.5       devtools_2.3.2        
+ [13] munsell_0.5.0          codetools_0.2-16       ragg_0.4.1            
+ [16] withr_2.4.2            GOSemSim_2.16.1        colorspace_2.0-2      
+ [19] Biobase_2.50.0         highr_0.9              knitr_1.36            
+ [22] rstudioapi_0.13        stats4_4.0.3           ggsignif_0.6.1        
+ [25] DOSE_3.16.0            labeling_0.4.2         git2r_0.27.1          
+ [28] urltools_1.7.3         polyclip_1.10-0        bit64_4.0.5           
+ [31] farver_2.1.0           downloader_0.4         rprojroot_2.0.2       
+ [34] Matrix.utils_0.9.8     vctrs_0.3.8            generics_0.1.0        
+ [37] xfun_0.26              R6_2.5.1               doParallel_1.0.16     
+ [40] graphlayouts_0.7.1     ggbeeswarm_0.6.0       clue_0.3-59           
+ [43] fgsea_1.16.0           cachem_1.0.6           assertthat_0.2.1      
+ [46] promises_1.1.1         scales_1.1.1           ggraph_2.0.4          
+ [49] enrichplot_1.10.1      beeswarm_0.4.0         gtable_0.3.0          
+ [52] processx_3.4.5         tidygraph_1.2.0        drat_0.1.8            
+ [55] rlang_0.4.11           systemfonts_1.0.0      GlobalOptions_0.1.2   
+ [58] splines_4.0.3          rstatix_0.7.0          broom_0.7.9           
+ [61] brew_1.0-6             BiocManager_1.30.10    yaml_2.2.1            
+ [64] reshape2_1.4.4         abind_1.4-5            modelr_0.1.8          
+ [67] backports_1.2.1        httpuv_1.5.4           qvalue_2.22.0         
+ [70] clusterProfiler_3.18.0 tools_4.0.3            usethis_1.6.3         
+ [73] ellipsis_0.3.2         jquerylib_0.1.4        RColorBrewer_1.1-2    
+ [76] BiocGenerics_0.36.1    sessioninfo_1.1.1      Rcpp_1.0.7            
+ [79] plyr_1.8.6             ps_1.4.0               prettyunits_1.1.1     
+ [82] ggpubr_0.4.0           dendsort_0.3.3         viridis_0.6.1         
+ [85] GetoptLong_1.0.5       S4Vectors_0.28.1       grr_0.9.5             
+ [88] haven_2.4.1            ggrepel_0.9.1          cluster_2.1.0         
+ [91] fs_1.5.0               data.table_1.14.2      DO.db_2.9             
+ [94] openxlsx_4.2.3         circlize_0.4.13        triebeard_0.3.0       
+ [97] reprex_0.3.0           mvtnorm_1.1-2          whisker_0.4           
+[100] matrixStats_0.61.0     pkgload_1.2.1          hms_1.1.1             
+[103] evaluate_0.14          rio_0.5.26             mclust_5.4.7          
+[106] RMTstat_0.3            readxl_1.3.1           N2R_0.1.1             
+[109] IRanges_2.24.1         gridExtra_2.3          shape_1.4.6           
+[112] testthat_3.0.0         compiler_4.0.3         KernSmooth_2.23-17    
+[115] shadowtext_0.0.7       crayon_1.4.1           R.oo_1.24.0           
+[118] htmltools_0.5.2        mgcv_1.8-33            later_1.1.0.1         
+[121] lubridate_1.7.9.2      DBI_1.1.1              tweenr_1.0.1          
+[124] dbplyr_2.0.0           pagoda2_1.0.7          ComplexHeatmap_2.9.4  
+[127] MASS_7.3-53            car_3.0-10             cli_3.0.1             
+[130] R.methodsS3_1.8.1      parallel_4.0.3         pkgconfig_2.0.3       
+[133] rvcheck_0.1.8          foreign_0.8-80         xml2_1.3.2            
+[136] foreach_1.5.1          vipor_0.4.5            leidenAlg_0.1.0       
+[139] rvest_0.3.6            callr_3.5.1            digest_0.6.28         
+[142] pracma_2.3.3           fastmatch_1.1-0        rmarkdown_2.11        
+[145] cellranger_1.1.0       Rook_1.1-1             curl_4.3.2            
+[148] rjson_0.2.20           lifecycle_1.0.1        nlme_3.1-149          
+[151] jsonlite_1.7.2         carData_3.0-4          viridisLite_0.4.0     
+[154] desc_1.3.0             fansi_0.5.0            pillar_1.6.3          
+[157] lattice_0.20-41        GO.db_3.12.1           fastmap_1.1.0         
+[160] httr_1.4.2             pkgbuild_1.1.0         glue_1.4.2            
+[163] remotes_2.2.0          zip_2.2.0              png_0.1-7             
+[166] iterators_1.0.13       bit_4.0.4              ggforce_0.3.2         
+[169] stringi_1.7.5          blob_1.2.2             textshaping_0.2.1     
+[172] org.Hs.eg.db_3.12.0    memoise_2.0.0          irlba_2.3.3           
+[175] ape_5.5               </code></pre>
+</div>
+</div>
+
+
+<!-- Adjust MathJax settings so that all math formulae are shown using
+TeX fonts only; see
+http://docs.mathjax.org/en/latest/configuration.html.  This will make
+the presentation more consistent at the cost of the webpage sometimes
+taking slightly longer to load. Note that this only works because the
+footer is added to webpages before the MathJax javascript. -->
+<script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    "HTML-CSS": { availableFonts: ["TeX"] }
+  });
+</script>
+
+
+</div>
+</div>
+
+</div>
+
+<script>
+
+// add bootstrap table styles to pandoc tables
+function bootstrapStylePandocTables() {
+  $('tr.odd').parent('tbody').parent('table').addClass('table table-condensed');
+}
+$(document).ready(function () {
+  bootstrapStylePandocTables();
+});
+
+
+</script>
+
+<!-- tabsets -->
+
+<script>
+$(document).ready(function () {
+  window.buildTabsets("TOC");
+});
+
+$(document).ready(function () {
+  $('.tabset-dropdown > .nav-tabs > li').click(function () {
+    $(this).parent().toggleClass('nav-tabs-open');
+  });
+});
+</script>
+
+<!-- code folding -->
+
+<script>
+$(document).ready(function ()  {
+
+    // temporarily add toc-ignore selector to headers for the consistency with Pandoc
+    $('.unlisted.unnumbered').addClass('toc-ignore')
+
+    // move toc-ignore selectors from section div to header
+    $('div.section.toc-ignore')
+        .removeClass('toc-ignore')
+        .children('h1,h2,h3,h4,h5').addClass('toc-ignore');
+
+    // establish options
+    var options = {
+      selectors: "h1,h2,h3",
+      theme: "bootstrap3",
+      context: '.toc-content',
+      hashGenerator: function (text) {
+        return text.replace(/[.\\/?&!#<>]/g, '').replace(/\s/g, '_');
+      },
+      ignoreSelector: ".toc-ignore",
+      scrollTo: 0
+    };
+    options.showAndHide = true;
+    options.smoothScroll = true;
+
+    // tocify
+    var toc = $("#TOC").tocify(options).data("toc-tocify");
+});
+</script>
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>
