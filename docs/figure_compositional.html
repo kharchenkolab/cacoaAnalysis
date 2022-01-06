@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+
+<meta name="author" content="Viktor Petukhov" />
+
+<meta name="date" content="2022-01-06" />
+
+<title>Cluster-based compositional analysis</title>
+
+<script src="site_libs/jquery-3.6.0/jquery-3.6.0.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link href="site_libs/bootstrap-3.3.5/css/cosmo.min.css" rel="stylesheet" />
+<script src="site_libs/bootstrap-3.3.5/js/bootstrap.min.js"></script>
+<script src="site_libs/bootstrap-3.3.5/shim/html5shiv.min.js"></script>
+<script src="site_libs/bootstrap-3.3.5/shim/respond.min.js"></script>
+<style>h1 {font-size: 34px;}
+       h1.title {font-size: 38px;}
+       h2 {font-size: 30px;}
+       h3 {font-size: 24px;}
+       h4 {font-size: 18px;}
+       h5 {font-size: 16px;}
+       h6 {font-size: 12px;}
+       code {color: inherit; background-color: rgba(0, 0, 0, 0.04);}
+       pre:not([class]) { background-color: white }</style>
+<script src="site_libs/jqueryui-1.11.4/jquery-ui.min.js"></script>
+<link href="site_libs/tocify-1.9.1/jquery.tocify.css" rel="stylesheet" />
+<script src="site_libs/tocify-1.9.1/jquery.tocify.js"></script>
+<script src="site_libs/navigation-1.1/tabsets.js"></script>
+<link href="site_libs/highlightjs-9.12.0/textmate.css" rel="stylesheet" />
+<script src="site_libs/highlightjs-9.12.0/highlight.js"></script>
+
+<link rel="icon" href="https://github.com/workflowr/workflowr-assets/raw/master/img/reproducible.png">
+<!-- Add a small amount of space between sections. -->
+<style type="text/css">
+div.section {
+  padding-top: 12px;
+}
+</style>
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+<style type="text/css">code{white-space: pre;}</style>
+<script type="text/javascript">
+if (window.hljs) {
+  hljs.configure({languages: []});
+  hljs.initHighlightingOnLoad();
+  if (document.readyState && document.readyState === "complete") {
+    window.setTimeout(function() { hljs.initHighlighting(); }, 0);
+  }
+}
+</script>
+
+
+
+
+
+
+
+
+<style type = "text/css">
+.main-container {
+  max-width: 940px;
+  margin-left: auto;
+  margin-right: auto;
+}
+img {
+  max-width:100%;
+}
+.tabbed-pane {
+  padding-top: 12px;
+}
+.html-widget {
+  margin-bottom: 20px;
+}
+button.code-folding-btn:focus {
+  outline: none;
+}
+summary {
+  display: list-item;
+}
+pre code {
+  padding: 0;
+}
+</style>
+
+
+<style type="text/css">
+.dropdown-submenu {
+  position: relative;
+}
+.dropdown-submenu>.dropdown-menu {
+  top: 0;
+  left: 100%;
+  margin-top: -6px;
+  margin-left: -1px;
+  border-radius: 0 6px 6px 6px;
+}
+.dropdown-submenu:hover>.dropdown-menu {
+  display: block;
+}
+.dropdown-submenu>a:after {
+  display: block;
+  content: " ";
+  float: right;
+  width: 0;
+  height: 0;
+  border-color: transparent;
+  border-style: solid;
+  border-width: 5px 0 5px 5px;
+  border-left-color: #cccccc;
+  margin-top: 5px;
+  margin-right: -10px;
+}
+.dropdown-submenu:hover>a:after {
+  border-left-color: #adb5bd;
+}
+.dropdown-submenu.pull-left {
+  float: none;
+}
+.dropdown-submenu.pull-left>.dropdown-menu {
+  left: -100%;
+  margin-left: 10px;
+  border-radius: 6px 0 6px 6px;
+}
+</style>
+
+<script type="text/javascript">
+// manage active state of menu based on current page
+$(document).ready(function () {
+  // active menu anchor
+  href = window.location.pathname
+  href = href.substr(href.lastIndexOf('/') + 1)
+  if (href === "")
+    href = "index.html";
+  var menuAnchor = $('a[href="' + href + '"]');
+
+  // mark it active
+  menuAnchor.tab('show');
+
+  // if it's got a parent navbar menu mark it active as well
+  menuAnchor.closest('li.dropdown').addClass('active');
+
+  // Navbar adjustments
+  var navHeight = $(".navbar").first().height() + 15;
+  var style = document.createElement('style');
+  var pt = "padding-top: " + navHeight + "px; ";
+  var mt = "margin-top: -" + navHeight + "px; ";
+  var css = "";
+  // offset scroll position for anchor links (for fixed navbar)
+  for (var i = 1; i <= 6; i++) {
+    css += ".section h" + i + "{ " + pt + mt + "}\n";
+  }
+  style.innerHTML = "body {" + pt + "padding-bottom: 40px; }\n" + css;
+  document.head.appendChild(style);
+});
+</script>
+
+<!-- tabsets -->
+
+<style type="text/css">
+.tabset-dropdown > .nav-tabs {
+  display: inline-table;
+  max-height: 500px;
+  min-height: 44px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.tabset-dropdown > .nav-tabs > li.active:before {
+  content: "";
+  font-family: 'Glyphicons Halflings';
+  display: inline-block;
+  padding: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li.active:before {
+  content: "&#xe258;";
+  border: none;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open:before {
+  content: "";
+  font-family: 'Glyphicons Halflings';
+  display: inline-block;
+  padding: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs > li.active {
+  display: block;
+}
+
+.tabset-dropdown > .nav-tabs > li > a,
+.tabset-dropdown > .nav-tabs > li > a:focus,
+.tabset-dropdown > .nav-tabs > li > a:hover {
+  border: none;
+  display: inline-block;
+  border-radius: 4px;
+  background-color: transparent;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li {
+  display: block;
+  float: none;
+}
+
+.tabset-dropdown > .nav-tabs > li {
+  display: none;
+}
+</style>
+
+<!-- code folding -->
+
+
+
+<style type="text/css">
+
+#TOC {
+  margin: 25px 0px 20px 0px;
+}
+@media (max-width: 768px) {
+#TOC {
+  position: relative;
+  width: 100%;
+}
+}
+
+@media print {
+.toc-content {
+  /* see https://github.com/w3c/csswg-drafts/issues/4434 */
+  float: right;
+}
+}
+
+.toc-content {
+  padding-left: 30px;
+  padding-right: 40px;
+}
+
+div.main-container {
+  max-width: 1200px;
+}
+
+div.tocify {
+  width: 20%;
+  max-width: 260px;
+  max-height: 85%;
+}
+
+@media (min-width: 768px) and (max-width: 991px) {
+  div.tocify {
+    width: 25%;
+  }
+}
+
+@media (max-width: 767px) {
+  div.tocify {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+.tocify ul, .tocify li {
+  line-height: 20px;
+}
+
+.tocify-subheader .tocify-item {
+  font-size: 0.90em;
+}
+
+.tocify .list-group-item {
+  border-radius: 0px;
+}
+
+
+</style>
+
+
+
+</head>
+
+<body>
+
+
+<div class="container-fluid main-container">
+
+
+<!-- setup 3col/9col grid for toc_float and main content  -->
+<div class="row">
+<div class="col-xs-12 col-sm-4 col-md-3">
+<div id="TOC" class="tocify">
+</div>
+</div>
+
+<div class="toc-content col-xs-12 col-sm-8 col-md-9">
+
+
+
+
+<div class="navbar navbar-default  navbar-fixed-top" role="navigation">
+  <div class="container">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar">
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="index.html">cacoaAnalysis</a>
+    </div>
+    <div id="navbar" class="navbar-collapse collapse">
+      <ul class="nav navbar-nav">
+        <li>
+  <a href="index.html">Home</a>
+</li>
+<li>
+  <a href="about.html">About</a>
+</li>
+<li>
+  <a href="license.html">License</a>
+</li>
+      </ul>
+      <ul class="nav navbar-nav navbar-right">
+        
+      </ul>
+    </div><!--/.nav-collapse -->
+  </div><!--/.container -->
+</div><!--/.navbar -->
+
+<div id="header">
+
+
+
+<h1 class="title toc-ignore">Cluster-based compositional analysis</h1>
+<h4 class="author"><a href="https://github.com/VPetukhov/">Viktor Petukhov</a></h4>
+<h4 class="date">2022-01-06</h4>
+
+</div>
+
+
+<p>
+<button type="button" class="btn btn-default btn-workflowr btn-workflowr-report" data-toggle="collapse" data-target="#workflowr-report">
+<span class="glyphicon glyphicon-list" aria-hidden="true"></span> workflowr <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span>
+</button>
+</p>
+<div id="workflowr-report" class="collapse">
+<ul class="nav nav-tabs">
+<li class="active">
+<a data-toggle="tab" href="#summary">Summary</a>
+</li>
+<li>
+<a data-toggle="tab" href="#checks"> Checks <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> </a>
+</li>
+<li>
+<a data-toggle="tab" href="#versions">Past versions</a>
+</li>
+</ul>
+<div class="tab-content">
+<div id="summary" class="tab-pane fade in active">
+<p>
+<strong>Last updated:</strong> 2022-01-06
+</p>
+<p>
+<strong>Checks:</strong> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> 7 <span class="glyphicon glyphicon-exclamation-sign text-danger" aria-hidden="true"></span> 0
+</p>
+<p>
+<strong>Knit directory:</strong> <code>cacoaAnalysis/</code> <span class="glyphicon glyphicon-question-sign" aria-hidden="true" title="This is the local directory in which the code in this file was executed."> </span>
+</p>
+<p>
+This reproducible <a href="http://rmarkdown.rstudio.com">R Markdown</a> analysis was created with <a
+  href="https://github.com/jdblischak/workflowr">workflowr</a> (version 1.6.2). The <em>Checks</em> tab describes the reproducibility checks that were applied when the results were created. The <em>Past versions</em> tab lists the development history.
+</p>
+<hr>
+</div>
+<div id="checks" class="tab-pane fade">
+<div id="workflowr-checks" class="panel-group">
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongRMarkdownfilestronguptodate"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>R Markdown file:</strong> up-to-date </a>
+</p>
+</div>
+<div id="strongRMarkdownfilestronguptodate" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great! Since the R Markdown file has been committed to the Git repository, you know the exact version of the code that produced these results.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongEnvironmentstrongempty"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Environment:</strong> empty </a>
+</p>
+</div>
+<div id="strongEnvironmentstrongempty" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! The global environment was empty. Objects defined in the global environment can affect the analysis in your R Markdown file in unknown ways. For reproduciblity it's best to always run the code in an empty environment.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongSeedstrongcodesetseed20211123code"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Seed:</strong> <code>set.seed(20211123)</code> </a>
+</p>
+</div>
+<div id="strongSeedstrongcodesetseed20211123code" class="panel-collapse collapse">
+<div class="panel-body">
+<p>The command <code>set.seed(20211123)</code> was run prior to running the code in the R Markdown file. Setting a seed ensures that any results that rely on randomness, e.g. subsampling or permutations, are reproducible.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongSessioninformationstrongrecorded"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Session information:</strong> recorded </a>
+</p>
+</div>
+<div id="strongSessioninformationstrongrecorded" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! Recording the operating system, R version, and package versions is critical for reproducibility.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongCachestrongnone"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Cache:</strong> none </a>
+</p>
+</div>
+<div id="strongCachestrongnone" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Nice! There were no cached chunks for this analysis, so you can be confident that you successfully produced the results during this run.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongFilepathsstrongrelative"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>File paths:</strong> relative </a>
+</p>
+</div>
+<div id="strongFilepathsstrongrelative" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! Using relative paths to the files within your workflowr project makes it easier to run your code on other machines.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongRepositoryversionstrongahrefhttpsgithubcomkharchenkolabcacoaAnalysistree2ff50cc67ee4ad059000590f7ef681b4dac1a438targetblank2ff50cca"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Repository version:</strong> <a href="https://github.com/kharchenkolab/cacoaAnalysis/tree/2ff50cc67ee4ad059000590f7ef681b4dac1a438" target="_blank">2ff50cc</a> </a>
+</p>
+</div>
+<div id="strongRepositoryversionstrongahrefhttpsgithubcomkharchenkolabcacoaAnalysistree2ff50cc67ee4ad059000590f7ef681b4dac1a438targetblank2ff50cca" class="panel-collapse collapse">
+<div class="panel-body">
+<p>
+Great! You are using Git for version control. Tracking code development and connecting the code version to the results is critical for reproducibility.
+</p>
+<p>
+The results in this page were generated with repository version <a href="https://github.com/kharchenkolab/cacoaAnalysis/tree/2ff50cc67ee4ad059000590f7ef681b4dac1a438" target="_blank">2ff50cc</a>. See the <em>Past versions</em> tab to see a history of the changes made to the R Markdown and HTML files.
+</p>
+<p>
+Note that you need to be careful to ensure that all relevant files for the analysis have been committed to Git prior to generating the results (you can use <code>wflow_publish</code> or <code>wflow_git_commit</code>). workflowr only checks the R Markdown file, but you know if there are other scripts or data files that it depends on. Below is the status of the Git repository when the results were generated:
+</p>
+<pre><code>
+Ignored files:
+    Ignored:    .Rhistory
+    Ignored:    .Rproj.user/
+    Ignored:    analysis/.Rhistory
+    Ignored:    analysis/figure_cluster_based_de_bio.nb.html
+    Ignored:    analysis/figure_cluster_free_expression.nb.html
+    Ignored:    analysis/figure_compositional.nb.html
+    Ignored:    analysis/figure_compositional_cf.nb.html
+    Ignored:    analysis/figure_expression_shifts.nb.html
+    Ignored:    analysis/figure_heterogeneity.nb.html
+    Ignored:    analysis/figure_interpretation.nb.html
+    Ignored:    analysis/prepare_cacoa_results.nb.html
+    Ignored:    analysis/preprocess.nb.html
+    Ignored:    analysis/report_asd.nb.html
+    Ignored:    analysis/report_az.nb.html
+    Ignored:    analysis/report_ep.nb.html
+    Ignored:    analysis/report_ms.nb.html
+    Ignored:    analysis/report_pf.nb.html
+    Ignored:    analysis/report_scc.nb.html
+    Ignored:    analysis/simulation_distances.nb.html
+    Ignored:    analysis/simulation_variance.nb.html
+    Ignored:    cache/
+    Ignored:    data/ASD/
+    Ignored:    data/AZ/
+    Ignored:    data/EP/
+    Ignored:    data/MS/
+    Ignored:    data/PF/
+    Ignored:    data/SCC/
+    Ignored:    man/
+    Ignored:    output/figures/
+
+Unstaged changes:
+    Modified:   analysis/figure_interpretation.Rmd
+
+</code></pre>
+<p>
+Note that any generated files, e.g. HTML, png, CSS, etc., are not included in this status report because it is ok for generated content to have uncommitted changes.
+</p>
+</div>
+</div>
+</div>
+</div>
+<hr>
+</div>
+<div id="versions" class="tab-pane fade">
+
+<p>
+These are the previous versions of the repository in which changes were made to the R Markdown (<code>analysis/figure_compositional.Rmd</code>) and HTML (<code>docs/figure_compositional.html</code>) files. If you've configured a remote Git repository (see <code>?wflow_git_remote</code>), click on the hyperlinks in the table below to view the files as they were in that past version.
+</p>
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+File
+</th>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+<th>
+Message
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Rmd
+</td>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/2ff50cc67ee4ad059000590f7ef681b4dac1a438/analysis/figure_compositional.Rmd" target="_blank">2ff50cc</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2022-01-06
+</td>
+<td>
+Updated the compositional figure
+</td>
+</tr>
+<tr>
+<td>
+Rmd
+</td>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/d8640295130ffb143a1f0b6267ca1fe233002820/analysis/figure_compositional.Rmd" target="_blank">d864029</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-10
+</td>
+<td>
+Compositional figure notebooks
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<hr>
+</div>
+</div>
+</div>
+<pre class="r"><code>getPValueDf &lt;- function(cao, cell.group.order) {
+  freqs &lt;- cao$test.results$coda$cnts %&gt;% {. / rowSums(.)}
+  pval.df &lt;- cao$sample.groups %&gt;% {split(names(.), .)} %&gt;% 
+    {matrixTests::col_wilcoxon_twosample(freqs[.[[1]],], freqs[.[[2]],])} %$% 
+    setNames(pvalue, rownames(.)) %&gt;% 
+    p.adjust(&quot;BH&quot;) %&gt;% cacoa:::pvalueToCode(ns.symbol=&quot;&quot;) %&gt;% 
+    {tibble(ind=names(.), freq=., coda=cao$test.results$coda$padj[names(.)])} %&gt;% 
+    mutate(ind=factor(ind, levels=cell.group.order), coda=cacoa:::pvalueToCode(coda, ns.symbol=&quot;&quot;)) %&gt;% 
+    rename(Freqs=freq, CoDA=coda)
+  
+  return(pval.df)
+}
+
+addPvalueToCoda &lt;- function(gg, cao, x.vals, show.legend=FALSE, size=4, legend.title=&quot;Significance&quot;) {
+  pval.df &lt;- getPValueDf(cao, cell.group.order=levels(gg$data$ind))
+  gg &lt;- gg + 
+    geom_text(aes(x=x.vals[1], label=CoDA, color=&quot;CoDA&quot;), data=pval.df, vjust=0.75, size=size) +
+    geom_text(aes(x=x.vals[2], label=Freqs, color=&quot;Wilcox&quot;), data=pval.df, vjust=0.75, size=size) +
+    scale_color_manual(values=c(&quot;black&quot;, &quot;darkred&quot;))
+  
+  if (show.legend) {
+    gg &lt;- gg + 
+      cacoa:::theme_legend_position(c(1, 0.04)) +
+      guides(fill=guide_none(), color=guide_legend(title=legend.title))
+  }
+  return(gg)
+}</code></pre>
+<div id="toy-example" class="section level2">
+<h2>Toy example</h2>
+<p>Simulate data:</p>
+<pre class="r"><code>n.cell.types &lt;- 7
+cell.types &lt;- paste(&#39;type&#39;, 1:n.cell.types, sep=&#39;&#39;)
+
+n.samples &lt;- 20  # number of samples in one group
+groups.name &lt;- c(&#39;case&#39;, &#39;control&#39;)
+groups.type &lt;- c(rep(groups.name[1], n.samples), rep(groups.name[2], n.samples))
+sample.names &lt;- paste(groups.type, 1:(2*n.samples), sep = &#39;&#39;)
+groups &lt;- setNames(groups.type %in% groups.name[1], sample.names)
+
+palette &lt;- RColorBrewer::brewer.pal(n.cell.types, &quot;Set1&quot;) %&gt;% setNames(cell.types)
+
+sample_groups &lt;- c(&quot;control&quot;, &quot;case&quot;)[groups + 1] %&gt;% setNames(names(groups))
+
+sg_pal &lt;- c(case=&quot;#BF1363&quot;, control=&quot;#39A6A3&quot;)</code></pre>
+<pre class="r"><code>cnt.shift &lt;- 100
+cnt.shift2 &lt;- -15
+
+set.seed(1124)
+
+cnts &lt;- lapply(1:(2 * n.samples), function(i) round(rnorm(n.cell.types, mean=50, sd=5))) %&gt;% 
+  do.call(rbind, .) %&gt;% set_rownames(sample.names) %&gt;% set_colnames(cell.types)
+
+cnts[,1] &lt;- cnts[,1] + groups * cnt.shift
+cnts[,2] &lt;- cnts[,2] + groups * cnt.shift2
+cnts[,3] &lt;- cnts[,3] + groups * cnt.shift2
+
+freqs &lt;- cnts %&gt;% {. / rowSums(.)}
+
+res &lt;- cacoa:::runCoda(cnts, groups, n.seed=239)
+dfs &lt;- cacoa:::estimateCdaSpace(cnts, groups)</code></pre>
+<p>Prepare plots:</p>
+<pre class="r"><code>theme_text_rot &lt;- theme(axis.text.x=element_text(angle=45, hjust=1, vjust=1))
+gg_boxes &lt;- list(freqs=freqs, counts=cnts) %&gt;% lapply(function(mat) {
+  df &lt;- melt(t(mat)) %&gt;% set_colnames(c(&#39;type&#39;, &#39;sample.name&#39;, &#39;value&#39;))
+  df[[&#39;group&#39;]] &lt;- groups.name[2 - (df$sample.name %in% sample.names[1:n.samples])]
+  
+  ggplot(df, aes(x=type, y=value, fill=group)) +
+    geom_boxplot(outlier.shape = NA) + 
+    # geom_jitter(position=position_jitterdodge(jitter.width=0.2), alpha=1, size = 0.1) + 
+    scale_fill_manual(values=sg_pal) + 
+    stat_compare_means(aes(label=cacoa:::pvalueToCode(..p.adj.., ns.symbol=&quot;&quot;)), 
+                       label.x=1.5, label.y=max(df$value), size=2.5) +
+    theme(legend.title=element_blank(), axis.title.x=element_blank()) + 
+    theme_text_rot +
+    cacoa:::theme_legend_position(c(1, 1))
+})
+
+gg_boxes$counts %&lt;&gt;% {. + ylab(&quot;Counts&quot;)}
+gg_boxes$freqs %&lt;&gt;% {. + ylab(&quot;Proportions&quot;)}
+
+gg_surface &lt;- ggplot(dfs$red, aes(x=S1, y=S2)) +
+  geom_abline(slope=-5, intercept=0.1) +
+  geom_point(aes(colour=sample_groups)) +
+  geom_hline(yintercept=0, linetype=&quot;dashed&quot;, size=0.2) +
+  geom_vline(xintercept=0, linetype=&quot;dashed&quot;, size=0.2) +
+  labs(colour=&quot;Condition&quot;, x=&quot;CDA-1&quot;, y=&quot;CDA-2&quot;) + 
+  scale_color_manual(values=sg_pal) +
+  theme(panel.grid=element_blank(), legend.position=&quot;none&quot;)
+
+gg_coda &lt;- res %$% cacoa:::plotCellLoadings(
+  loadings, padj, palette=palette, jitter.alpha=0.0,
+  ref.level=groups.name[2], target.level=groups.name[1], 
+  ref.load.level=res$ref.load.level, annotation.x=1.0
+) + theme(
+  panel.border=element_rect(size=0.1, fill=&quot;transparent&quot;),
+  panel.grid.minor.x=element_blank()
+)</code></pre>
+<pre class="r"><code>plot_grid(
+  gg_boxes$counts + ylab(&quot;Counts&quot;),
+  gg_boxes$freqs + ylab(&quot;Proportions&quot;),
+  gg_surface + theme(plot.margin=margin(t=10)),
+  gg_coda,
+  nrow=1
+)</code></pre>
+<p><img src="figure/figure_compositional.Rmd/unnamed-chunk-5-1.png" width="816" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>tree_theme &lt;- theme(
+  legend.key.height=unit(10, &quot;pt&quot;), legend.key.width=unit(14, &quot;pt&quot;), 
+  legend.position=&quot;bottom&quot;, plot.margin=margin(),
+  axis.text.y=element_text(hjust=1, vjust=0.5, margin=margin()), axis.text.x=element_blank(), 
+  axis.ticks=element_blank()
+)
+gg_toy_tree &lt;- cacoa:::plotContrastTree(
+  cnts, groups, ref.level=groups.name[2], target.level=groups.name[1], plot.theme=NULL,
+  adjust.pvalues=TRUE, loadings.mean=rowMeans(res$loadings), palette=sg_pal
+) + coord_flip() + tree_theme + theme(legend.margin=margin(l=10, t=-30)) +
+  guides(color=guide_legend(direction=&quot;vertical&quot;, title=&quot;Condition&quot;))
+
+gg_toy_tree</code></pre>
+<p><img src="figure/figure_compositional.Rmd/unnamed-chunk-6-1.png" width="288" style="display: block; margin: auto;" /></p>
+</div>
+<div id="pf" class="section level2">
+<h2>PF</h2>
+<pre class="r"><code>cao_pf &lt;- DataPath(&quot;PF/cao.rds&quot;) %&gt;% readr::read_rds() %&gt;% Cacoa$new()
+cao_pf$plot.theme %&lt;&gt;% {. + p_theme}</code></pre>
+<pre class="r"><code>cao_pf$plotCellGroupSizes(show.significance=TRUE, legend.position=c(1, 1))</code></pre>
+<p><img src="figure/figure_compositional.Rmd/unnamed-chunk-8-1.png" width="768" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>gg_pf_coda &lt;- cao_pf$plotCellLoadings(show.pvals=FALSE, alpha=0.0, annotation.x=0.61) +
+  scale_x_continuous(limits=c(-0.61, 0.7), expand=c(0, 0.0, 0.0, 0.1))
+
+gg_pf_coda %&lt;&gt;% addPvalueToCoda(cao_pf, c(0.53, 0.7), show.legend=FALSE, size=4)
+
+gg_pf_coda</code></pre>
+<p><img src="figure/figure_compositional.Rmd/unnamed-chunk-9-1.png" width="576" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>cd45_types &lt;- cao_pf$cache$joint.count.matrix[,&quot;PTPRC&quot;] %&gt;% 
+  split(cao_pf$cell.groups[names(.)]) %&gt;% 
+  sapply(function(x) mean(x &gt; 0)) %&gt;% sort() %&gt;% {names(.)[. &gt; 0.1]}
+
+cao_pf$estimateCellLoadings(cells.to.remain=cd45_types, name=&quot;imm.coda&quot;)
+gg_pf_coda_imm &lt;- cao_pf$plotCellLoadings(show.pvals=FALSE, alpha=0.0, name=&quot;imm.coda&quot;, annotation.x=1) +
+  scale_x_continuous(limits=c(-1, 1), expand=c(0.01, 0.0))
+
+gg_pf_coda_imm</code></pre>
+<p><img src="figure/figure_compositional.Rmd/unnamed-chunk-10-1.png" width="480" style="display: block; margin: auto;" /></p>
+</div>
+<div id="ms" class="section level2">
+<h2>MS</h2>
+<pre class="r"><code>cao_ms &lt;- DataPath(&quot;MS/cao.rds&quot;) %&gt;% readr::read_rds() %&gt;% Cacoa$new()
+cao_ms$plot.theme %&lt;&gt;% {. + p_theme}</code></pre>
+<pre class="r"><code>gg_ms_coda &lt;- cao_ms$plotCellLoadings(show.pvals=FALSE, alpha=0.0, jitter.size=0.25, annotation.x=1) +
+  scale_x_continuous(limits=c(-1, 1), expand=c(0, 0, 0.05, 0.0))
+gg_ms_coda %&lt;&gt;% addPvalueToCoda(cao_ms, c(0.85, 1), size=4)
+gg_ms_coda</code></pre>
+<p><img src="figure/figure_compositional.Rmd/unnamed-chunk-12-1.png" width="384" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>gg_ms_tree &lt;- cao_ms$plotContrastTree() + coord_flip() + tree_theme + 
+  guides(color=guide_legend(direction=&quot;vertical&quot;, title=&quot;Condition&quot;, order=1),
+         fill=guide_colorbar(title.position=&quot;top&quot;, order=2, title.hjust=0.5))
+
+gg_ms_tree</code></pre>
+<p><img src="figure/figure_compositional.Rmd/unnamed-chunk-13-1.png" width="384" style="display: block; margin: auto;" /></p>
+</div>
+<div id="compile-figure" class="section level2">
+<h2>Compile figure</h2>
+<pre class="r"><code>p_theme &lt;- theme(
+  axis.text=element_text(size=8), axis.title=element_text(size=10),
+  legend.title=element_text(size=10), legend.text=element_text(size=8), legend.key.width=unit(12, &quot;pt&quot;),
+  plot.margin=margin(b=5, t=5, l=1)
+)
+
+theme_margin &lt;- theme(plot.margin=margin(r=10, b=10, t=2))
+
+gg &lt;- plot_grid(
+  plot_grid(
+    gg_boxes$counts + p_theme + theme(legend.title=element_blank()) + theme_margin,
+    gg_boxes$freqs + p_theme + theme(legend.title=element_blank()) + theme_margin,
+    gg_surface + p_theme + theme_margin + theme(axis.title.x=element_text(margin=margin(t=-10))), 
+    gg_coda + p_theme + theme(axis.title.x=element_text(margin=margin(t=-10)), plot.margin=margin(), 
+                              axis.title.y=element_blank()),
+    nrow=1, align=&quot;h&quot;
+  ),
+  plot_grid(
+    gg_pf_coda + p_theme,
+    plot_grid(
+      gg_pf_coda_imm + p_theme + theme(plot.margin=margin(r=10, b=5), axis.title.x=element_text(margin=margin())), 
+      gg_ms_coda + p_theme,
+      ncol=1, rel_heights=c(0.7, 1), align=&quot;v&quot;
+    ),
+    plot_grid(
+      gg_toy_tree + p_theme + 
+        theme(legend.margin=margin(), legend.box.margin=margin(l=-30, t=-25), plot.margin=margin(l=-50)), 
+      gg_ms_tree + 
+        scale_y_continuous(expand=c(0, 0, 0.1, 0)) + p_theme + 
+        theme(legend.margin=margin(), legend.box.margin=margin(l=-30, t=-35), plot.margin=margin(l=-50, t=7)), 
+      ncol=1, rel_heights=c(0.65, 1), align=&quot;v&quot;
+    ),
+    nrow=1, rel_widths=c(1, 1, 0.6)
+  ),
+  ncol=1, rel_heights=c(1, 2.9)
+)
+
+grDevices::cairo_pdf(figurePath(&quot;1_composition.pdf&quot;), width=8.5, height=8)
+gg
+td &lt;- dev.off();
+
+gg</code></pre>
+<p><img src="figure/figure_compositional.Rmd/unnamed-chunk-14-1.png" width="816" style="display: block; margin: auto;" /></p>
+<br>
+<p>
+<button type="button" class="btn btn-default btn-workflowr btn-workflowr-sessioninfo" data-toggle="collapse" data-target="#workflowr-sessioninfo" style="display: block;">
+<span class="glyphicon glyphicon-wrench" aria-hidden="true"></span> Session information
+</button>
+</p>
+<div id="workflowr-sessioninfo" class="collapse">
+<pre class="r"><code>sessionInfo()</code></pre>
+<pre><code>R version 4.0.3 (2020-10-10)
+Platform: x86_64-pc-linux-gnu (64-bit)
+Running under: Ubuntu 18.04.6 LTS
+
+Matrix products: default
+BLAS:   /usr/local/R/R-4.0.3/lib/R/lib/libRblas.so
+LAPACK: /usr/local/R/R-4.0.3/lib/R/lib/libRlapack.so
+
+locale:
+[1] C
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+ [1] cacoaAnalysis_0.1.0 dataorganizer_0.1.0 cowplot_1.1.1      
+ [4] reshape2_1.4.4      ggpubr_0.4.0        cacoa_0.2.0        
+ [7] Matrix_1.2-18       magrittr_2.0.1      forcats_0.5.1      
+[10] stringr_1.4.0       dplyr_1.0.7         purrr_0.3.4        
+[13] readr_1.4.0         tidyr_1.1.4         tibble_3.1.5       
+[16] ggplot2_3.3.5       tidyverse_1.3.0     workflowr_1.6.2    
+
+loaded via a namespace (and not attached):
+  [1] utf8_1.2.2           reticulate_1.22      R.utils_2.10.1      
+  [4] tidyselect_1.1.1     grid_4.0.3           Rtsne_0.15          
+  [7] devtools_2.3.2       munsell_0.5.0        codetools_0.2-16    
+ [10] withr_2.4.2          colorspace_2.0-2     highr_0.9           
+ [13] knitr_1.36           rstudioapi_0.13      stats4_4.0.3        
+ [16] ggsignif_0.6.1       labeling_0.4.2       git2r_0.27.1        
+ [19] urltools_1.7.3       mnormt_2.0.2         farver_2.1.0        
+ [22] rprojroot_2.0.2      Matrix.utils_0.9.8   vctrs_0.3.8         
+ [25] generics_0.1.0       xfun_0.26            R6_2.5.1            
+ [28] doParallel_1.0.16    ggbeeswarm_0.6.0     clue_0.3-59         
+ [31] cachem_1.0.6         assertthat_0.2.1     promises_1.1.1      
+ [34] scales_1.1.1         beeswarm_0.4.0       gtable_0.3.0        
+ [37] processx_3.4.5       drat_0.1.8           rlang_0.4.11        
+ [40] GlobalOptions_0.1.2  splines_4.0.3        rstatix_0.7.0       
+ [43] lazyeval_0.2.2       broom_0.7.9          brew_1.0-6          
+ [46] yaml_2.2.1           abind_1.4-5          modelr_0.1.8        
+ [49] backports_1.2.1      httpuv_1.5.4         tools_4.0.3         
+ [52] usethis_1.6.3        psych_2.1.6          sccore_1.0.1        
+ [55] ellipsis_0.3.2       jquerylib_0.1.4      RColorBrewer_1.1-2  
+ [58] ggdendro_0.1.22      coda.base_0.3.1      BiocGenerics_0.36.1 
+ [61] sessioninfo_1.1.1    Rcpp_1.0.7           plyr_1.8.6          
+ [64] ps_1.4.0             prettyunits_1.1.1    dendsort_0.3.3      
+ [67] GetoptLong_1.0.5     S4Vectors_0.28.1     grr_0.9.5           
+ [70] haven_2.4.1          ggrepel_0.9.1        cluster_2.1.0       
+ [73] fs_1.5.0             data.table_1.14.2    openxlsx_4.2.3      
+ [76] circlize_0.4.13      triebeard_0.3.0      reprex_0.3.0        
+ [79] tmvnsim_1.0-2        whisker_0.4          matrixStats_0.61.0  
+ [82] pkgload_1.2.1        hms_1.1.1            evaluate_0.14       
+ [85] rio_0.5.26           RMTstat_0.3          readxl_1.3.1        
+ [88] N2R_0.1.1            IRanges_2.24.1       gridExtra_2.3       
+ [91] shape_1.4.6          testthat_3.0.0       compiler_4.0.3      
+ [94] crayon_1.4.1         R.oo_1.24.0          htmltools_0.5.2     
+ [97] mgcv_1.8-33          later_1.1.0.1        conos_1.4.4         
+[100] lubridate_1.7.9.2    DBI_1.1.1            dbplyr_2.0.0        
+[103] pagoda2_1.0.7        ComplexHeatmap_2.9.4 MASS_7.3-53         
+[106] car_3.0-10           cli_3.0.1            heplots_1.3-8       
+[109] R.methodsS3_1.8.1    parallel_4.0.3       igraph_1.2.6        
+[112] pkgconfig_2.0.3      foreign_0.8-80       xml2_1.3.2          
+[115] foreach_1.5.1        vipor_0.4.5          leidenAlg_0.1.0     
+[118] rvest_0.3.6          callr_3.5.1          digest_0.6.28       
+[121] matrixTests_0.1.9    rmarkdown_2.11       cellranger_1.1.0    
+[124] tidytree_0.3.4       Rook_1.1-1           curl_4.3.2          
+[127] rjson_0.2.20         lifecycle_1.0.1      nlme_3.1-149        
+[130] jsonlite_1.7.2       carData_3.0-4        desc_1.3.0          
+[133] fansi_0.5.0          pillar_1.6.3         lattice_0.20-41     
+[136] ggrastr_1.0.1        fastmap_1.1.0        httr_1.4.2          
+[139] pkgbuild_1.1.0       glue_1.4.2           remotes_2.2.0       
+[142] zip_2.2.0            png_0.1-7            iterators_1.0.13    
+[145] candisc_0.8-5        stringi_1.7.5        memoise_2.0.0       
+[148] irlba_2.3.3          ape_5.5             </code></pre>
+</div>
+</div>
+
+
+<!-- Adjust MathJax settings so that all math formulae are shown using
+TeX fonts only; see
+http://docs.mathjax.org/en/latest/configuration.html.  This will make
+the presentation more consistent at the cost of the webpage sometimes
+taking slightly longer to load. Note that this only works because the
+footer is added to webpages before the MathJax javascript. -->
+<script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    "HTML-CSS": { availableFonts: ["TeX"] }
+  });
+</script>
+
+
+</div>
+</div>
+
+</div>
+
+<script>
+
+// add bootstrap table styles to pandoc tables
+function bootstrapStylePandocTables() {
+  $('tr.odd').parent('tbody').parent('table').addClass('table table-condensed');
+}
+$(document).ready(function () {
+  bootstrapStylePandocTables();
+});
+
+
+</script>
+
+<!-- tabsets -->
+
+<script>
+$(document).ready(function () {
+  window.buildTabsets("TOC");
+});
+
+$(document).ready(function () {
+  $('.tabset-dropdown > .nav-tabs > li').click(function () {
+    $(this).parent().toggleClass('nav-tabs-open');
+  });
+});
+</script>
+
+<!-- code folding -->
+
+<script>
+$(document).ready(function ()  {
+
+    // temporarily add toc-ignore selector to headers for the consistency with Pandoc
+    $('.unlisted.unnumbered').addClass('toc-ignore')
+
+    // move toc-ignore selectors from section div to header
+    $('div.section.toc-ignore')
+        .removeClass('toc-ignore')
+        .children('h1,h2,h3,h4,h5').addClass('toc-ignore');
+
+    // establish options
+    var options = {
+      selectors: "h1,h2,h3",
+      theme: "bootstrap3",
+      context: '.toc-content',
+      hashGenerator: function (text) {
+        return text.replace(/[.\\/?&!#<>]/g, '').replace(/\s/g, '_');
+      },
+      ignoreSelector: ".toc-ignore",
+      scrollTo: 0
+    };
+    options.showAndHide = true;
+    options.smoothScroll = true;
+
+    // tocify
+    var toc = $("#TOC").tocify(options).data("toc-tocify");
+});
+</script>
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>
