@@ -140,7 +140,7 @@ gg_surface <- ggplot(dfs$red, aes(x=S1, y=S2)) +
 gg_coda <- res %$% cacoa:::plotCellLoadings(
   loadings, padj, palette=palette, jitter.alpha=0.0,
   ref.level=groups.name[2], target.level=groups.name[1], 
-  ref.load.level=res$ref.load.level, annotation.position=0.7
+  ref.load.level=res$ref.load.level, annotation.x=1.0
 ) + theme(
   panel.border=element_rect(size=0.1, fill="transparent"),
   panel.grid.minor.x=element_blank()
@@ -148,15 +148,13 @@ gg_coda <- res %$% cacoa:::plotCellLoadings(
 ```
 
 ```{r, fig.width=8.5, fig.height=2.25}
-gg_toy <- plot_grid(
+plot_grid(
   gg_boxes$counts + ylab("Counts"),
   gg_boxes$freqs + ylab("Proportions"),
   gg_surface + theme(plot.margin=margin(t=10)),
   gg_coda,
   nrow=1
 )
-
-gg_toy
 ```
 
 ```{r, fig.width=3, fig.height=3}
@@ -180,6 +178,10 @@ gg_toy_tree
 ```{r}
 cao_pf <- DataPath("PF/cao.rds") %>% readr::read_rds() %>% Cacoa$new()
 cao_pf$plot.theme %<>% {. + p_theme}
+```
+
+```{r, warning=FALSE, message=FALSE, fig.width=8, fig.height=3.5}
+cao_pf$plotCellGroupSizes(show.significance=TRUE, legend.position=c(1, 1))
 ```
 
 ```{r, fig.width=6, fig.height=5, message=FALSE, warning=FALSE}
@@ -220,7 +222,7 @@ gg_ms_coda
 ```{r, fig.width=4, fig.height=5}
 gg_ms_tree <- cao_ms$plotContrastTree() + coord_flip() + tree_theme + 
   guides(color=guide_legend(direction="vertical", title="Condition", order=1),
-         fill=guide_colorbar(title.position="top", order=2))
+         fill=guide_colorbar(title.position="top", order=2, title.hjust=0.5))
 
 gg_ms_tree
 ```
@@ -250,7 +252,7 @@ gg <- plot_grid(
     plot_grid(
       gg_pf_coda_imm + p_theme + theme(plot.margin=margin(r=10, b=5), axis.title.x=element_text(margin=margin())), 
       gg_ms_coda + p_theme,
-      ncol=1, rel_heights=c(0.7, 1, 1), align="v"
+      ncol=1, rel_heights=c(0.7, 1), align="v"
     ),
     plot_grid(
       gg_toy_tree + p_theme + 
@@ -267,7 +269,7 @@ gg <- plot_grid(
 
 grDevices::cairo_pdf(figurePath("1_composition.pdf"), width=8.5, height=8)
 gg
-dev.off()
+td <- dev.off();
 
 gg
 ```
