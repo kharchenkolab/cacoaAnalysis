@@ -104,8 +104,9 @@ df_melt <- caos$PF$.__enclos_env__$private$extractCodaData(cell.groups=caos$PF$c
 p_palette <- c("Control, TGen"="#a6cee3", "Control, Vanderbilt"="#33a02c", 
                "IPF, TGen"="#e41a1c", "IPF, Vanderbilt"="#984ea3")
 
-p_types <- c("Myofibroblasts", "Fibroblasts")
-gg_pf_fracs <- filter(df_melt, (variable %in% p_types)) %>% mutate(variable=droplevels(variable)) %>% 
+p_types <- c("Fibroblasts", "MUC5B+", "Myofibroblasts")
+gg_pf_fracs <- filter(df_melt, (variable %in% p_types)) %>% 
+  mutate(variable=factor(variable, levels=p_types)) %>% 
   cacoa:::plotCountBoxplotsPerType(plot.theme=caos$PFpf$plot.theme, jitter.width=0.05, alpha=1, size=0.5) +
     scale_y_continuous(limits=c(0, 3.75), expand=c(0, 0), name="Cell fraction, %") + 
     scale_x_discrete(expand=c(0, 0.002, 0, 0)) +
@@ -180,11 +181,13 @@ plot_grid(
   plotlist=c(
     list(gg_ms_stage + leg_theme),
     p_ggs_covar,
-    list(gg_pf_fracs + theme_ax + theme(legend.key.height=unit(12, "pt"))),
+    list(gg_pf_fracs + theme_ax + theme(legend.key.height=unit(12, "pt"), 
+                                        axis.text.x=element_text(size=unit(8, "pt")))),
     list(gg_pf_meta + theme_ax + theme(axis.title.y=element_text(hjust=1)))
   ),
   nrow=2, byrow=FALSE, labels=p_labs, scale=0.95, 
-  label_fontface="oblique", hjust=0, label_x=0.07, label_y=0.99, label_size=12
+  label_fontface="oblique", hjust=0, label_x=0.07, label_y=0.99, label_size=12,
+  rel_widths=c(1, 1, 1, 1.2)
 )
 
 ggsave(figurePath("4_heterogeneity.pdf"))
@@ -359,6 +362,15 @@ gg_mds_500_batch <- caos$MS$plotSampleDistances(
 plot_grid(gg_es_500_batch, gg_mds_500_batch, align="vh", axis="tb", rel_widths=c(1, 0.85))
 ```
 
+```{r, fig.width=4, fig.height=4}
+gg_coda_mds <- caos$PF$plotSampleDistances(
+  space='coda', sample.colors=caos$PF$data.object$misc$sample_metadata$Processing_site,
+  legend.position=c(0, 1), color.title='Processing site'
+) + scale_color_brewer(palette="Dark2") + leg_theme
+
+gg_coda_mds
+```
+
 ### Compile supp. figure
 
 ```{r, fig.width=8.5, fig.height=9, message=FALSE, warning=FALSE}
@@ -367,20 +379,22 @@ ggs_od_es <- list(gg_es_100, gg_es_500_sex, gg_es_500_batch) %>% lapply(`+`, the
   axis.title.y=element_text(size=11), plot.margin=margin(), axis.title.x=element_blank()
 )) %>% rasterise(dev="ragg_png")
 
-leg_guide <- guide_legend(
-  title.position="top", direction="horizontal", nrow=3, override.aes=list(shape=21),
-  keywidth=unit(1, "pt"), keyheight=unit(1, "pt")
+leg_guide <- function(...) guide_legend(
+  title.position="top", direction="horizontal", nrow=3, 
+  keywidth=unit(1, "pt"), keyheight=unit(1, "pt"), ...
 )
 ggs_mds_es <- list(gg_mds_100, gg_mds_500_sex, gg_mds_500_batch) %>% lapply(`+`, theme(
   legend.text=element_text(size=7), legend.title=element_text(size=9), legend.position="bottom",
   legend.margin=margin(), legend.box.margin=margin()
-)) %>% lapply(`+`, guides(fill=leg_guide, shape=leg_guide, color=leg_guide))
-
+)) %>% 
+  lapply(`+`, guides(fill=leg_guide(override.aes=list(shape=21)), shape=leg_guide(), 
+                     color=leg_guide(override.aes=list(shape=21)))
+)
 
 gg <- plot_grid(
   plot_grid(
     rasterise(gg_pf_comp_s, dev="ragg_png"),
-    ggplot() + theme_nothing(),
+    gg_coda_mds + theme(plot.margin=margin(t=20, r=20, b=20)),
     ncol=1, rel_heights=c(2, 1.5)
   ),
   plot_grid(
@@ -394,7 +408,7 @@ gg <- plot_grid(
 
 grDevices::cairo_pdf(figurePath("4s_heterogeneity.pdf"), width=8.5, height=9)
 gg
-dev.off()
+tr <- dev.off();
 
 gg
 ```
