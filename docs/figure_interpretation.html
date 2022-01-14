@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+
+<meta name="author" content="Viktor Petukhov" />
+
+<meta name="date" content="2022-01-14" />
+
+<title>Functional interpretation</title>
+
+<script src="site_libs/jquery-3.6.0/jquery-3.6.0.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link href="site_libs/bootstrap-3.3.5/css/cosmo.min.css" rel="stylesheet" />
+<script src="site_libs/bootstrap-3.3.5/js/bootstrap.min.js"></script>
+<script src="site_libs/bootstrap-3.3.5/shim/html5shiv.min.js"></script>
+<script src="site_libs/bootstrap-3.3.5/shim/respond.min.js"></script>
+<style>h1 {font-size: 34px;}
+       h1.title {font-size: 38px;}
+       h2 {font-size: 30px;}
+       h3 {font-size: 24px;}
+       h4 {font-size: 18px;}
+       h5 {font-size: 16px;}
+       h6 {font-size: 12px;}
+       code {color: inherit; background-color: rgba(0, 0, 0, 0.04);}
+       pre:not([class]) { background-color: white }</style>
+<script src="site_libs/jqueryui-1.11.4/jquery-ui.min.js"></script>
+<link href="site_libs/tocify-1.9.1/jquery.tocify.css" rel="stylesheet" />
+<script src="site_libs/tocify-1.9.1/jquery.tocify.js"></script>
+<script src="site_libs/navigation-1.1/tabsets.js"></script>
+<link href="site_libs/highlightjs-9.12.0/textmate.css" rel="stylesheet" />
+<script src="site_libs/highlightjs-9.12.0/highlight.js"></script>
+
+<link rel="icon" href="https://github.com/workflowr/workflowr-assets/raw/master/img/reproducible.png">
+<!-- Add a small amount of space between sections. -->
+<style type="text/css">
+div.section {
+  padding-top: 12px;
+}
+</style>
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+<style type="text/css">code{white-space: pre;}</style>
+<script type="text/javascript">
+if (window.hljs) {
+  hljs.configure({languages: []});
+  hljs.initHighlightingOnLoad();
+  if (document.readyState && document.readyState === "complete") {
+    window.setTimeout(function() { hljs.initHighlighting(); }, 0);
+  }
+}
+</script>
+
+
+
+
+
+
+
+
+<style type = "text/css">
+.main-container {
+  max-width: 940px;
+  margin-left: auto;
+  margin-right: auto;
+}
+img {
+  max-width:100%;
+}
+.tabbed-pane {
+  padding-top: 12px;
+}
+.html-widget {
+  margin-bottom: 20px;
+}
+button.code-folding-btn:focus {
+  outline: none;
+}
+summary {
+  display: list-item;
+}
+pre code {
+  padding: 0;
+}
+</style>
+
+
+<style type="text/css">
+.dropdown-submenu {
+  position: relative;
+}
+.dropdown-submenu>.dropdown-menu {
+  top: 0;
+  left: 100%;
+  margin-top: -6px;
+  margin-left: -1px;
+  border-radius: 0 6px 6px 6px;
+}
+.dropdown-submenu:hover>.dropdown-menu {
+  display: block;
+}
+.dropdown-submenu>a:after {
+  display: block;
+  content: " ";
+  float: right;
+  width: 0;
+  height: 0;
+  border-color: transparent;
+  border-style: solid;
+  border-width: 5px 0 5px 5px;
+  border-left-color: #cccccc;
+  margin-top: 5px;
+  margin-right: -10px;
+}
+.dropdown-submenu:hover>a:after {
+  border-left-color: #adb5bd;
+}
+.dropdown-submenu.pull-left {
+  float: none;
+}
+.dropdown-submenu.pull-left>.dropdown-menu {
+  left: -100%;
+  margin-left: 10px;
+  border-radius: 6px 0 6px 6px;
+}
+</style>
+
+<script type="text/javascript">
+// manage active state of menu based on current page
+$(document).ready(function () {
+  // active menu anchor
+  href = window.location.pathname
+  href = href.substr(href.lastIndexOf('/') + 1)
+  if (href === "")
+    href = "index.html";
+  var menuAnchor = $('a[href="' + href + '"]');
+
+  // mark it active
+  menuAnchor.tab('show');
+
+  // if it's got a parent navbar menu mark it active as well
+  menuAnchor.closest('li.dropdown').addClass('active');
+
+  // Navbar adjustments
+  var navHeight = $(".navbar").first().height() + 15;
+  var style = document.createElement('style');
+  var pt = "padding-top: " + navHeight + "px; ";
+  var mt = "margin-top: -" + navHeight + "px; ";
+  var css = "";
+  // offset scroll position for anchor links (for fixed navbar)
+  for (var i = 1; i <= 6; i++) {
+    css += ".section h" + i + "{ " + pt + mt + "}\n";
+  }
+  style.innerHTML = "body {" + pt + "padding-bottom: 40px; }\n" + css;
+  document.head.appendChild(style);
+});
+</script>
+
+<!-- tabsets -->
+
+<style type="text/css">
+.tabset-dropdown > .nav-tabs {
+  display: inline-table;
+  max-height: 500px;
+  min-height: 44px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.tabset-dropdown > .nav-tabs > li.active:before {
+  content: "";
+  font-family: 'Glyphicons Halflings';
+  display: inline-block;
+  padding: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li.active:before {
+  content: "&#xe258;";
+  border: none;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open:before {
+  content: "";
+  font-family: 'Glyphicons Halflings';
+  display: inline-block;
+  padding: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs > li.active {
+  display: block;
+}
+
+.tabset-dropdown > .nav-tabs > li > a,
+.tabset-dropdown > .nav-tabs > li > a:focus,
+.tabset-dropdown > .nav-tabs > li > a:hover {
+  border: none;
+  display: inline-block;
+  border-radius: 4px;
+  background-color: transparent;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li {
+  display: block;
+  float: none;
+}
+
+.tabset-dropdown > .nav-tabs > li {
+  display: none;
+}
+</style>
+
+<!-- code folding -->
+
+
+
+<style type="text/css">
+
+#TOC {
+  margin: 25px 0px 20px 0px;
+}
+@media (max-width: 768px) {
+#TOC {
+  position: relative;
+  width: 100%;
+}
+}
+
+@media print {
+.toc-content {
+  /* see https://github.com/w3c/csswg-drafts/issues/4434 */
+  float: right;
+}
+}
+
+.toc-content {
+  padding-left: 30px;
+  padding-right: 40px;
+}
+
+div.main-container {
+  max-width: 1200px;
+}
+
+div.tocify {
+  width: 20%;
+  max-width: 260px;
+  max-height: 85%;
+}
+
+@media (min-width: 768px) and (max-width: 991px) {
+  div.tocify {
+    width: 25%;
+  }
+}
+
+@media (max-width: 767px) {
+  div.tocify {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+.tocify ul, .tocify li {
+  line-height: 20px;
+}
+
+.tocify-subheader .tocify-item {
+  font-size: 0.90em;
+}
+
+.tocify .list-group-item {
+  border-radius: 0px;
+}
+
+
+</style>
+
+
+
+</head>
+
+<body>
+
+
+<div class="container-fluid main-container">
+
+
+<!-- setup 3col/9col grid for toc_float and main content  -->
+<div class="row">
+<div class="col-xs-12 col-sm-4 col-md-3">
+<div id="TOC" class="tocify">
+</div>
+</div>
+
+<div class="toc-content col-xs-12 col-sm-8 col-md-9">
+
+
+
+
+<div class="navbar navbar-default  navbar-fixed-top" role="navigation">
+  <div class="container">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar">
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="index.html">cacoaAnalysis</a>
+    </div>
+    <div id="navbar" class="navbar-collapse collapse">
+      <ul class="nav navbar-nav">
+        <li>
+  <a href="index.html">Home</a>
+</li>
+<li>
+  <a href="about.html">About</a>
+</li>
+<li>
+  <a href="license.html">License</a>
+</li>
+      </ul>
+      <ul class="nav navbar-nav navbar-right">
+        
+      </ul>
+    </div><!--/.nav-collapse -->
+  </div><!--/.container -->
+</div><!--/.navbar -->
+
+<div id="header">
+
+
+
+<h1 class="title toc-ignore">Functional interpretation</h1>
+<h4 class="author"><a href="https://github.com/VPetukhov/">Viktor Petukhov</a></h4>
+<h4 class="date">2022-01-14</h4>
+
+</div>
+
+
+<p>
+<button type="button" class="btn btn-default btn-workflowr btn-workflowr-report" data-toggle="collapse" data-target="#workflowr-report">
+<span class="glyphicon glyphicon-list" aria-hidden="true"></span> workflowr <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span>
+</button>
+</p>
+<div id="workflowr-report" class="collapse">
+<ul class="nav nav-tabs">
+<li class="active">
+<a data-toggle="tab" href="#summary">Summary</a>
+</li>
+<li>
+<a data-toggle="tab" href="#checks"> Checks <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> </a>
+</li>
+<li>
+<a data-toggle="tab" href="#versions">Past versions</a>
+</li>
+</ul>
+<div class="tab-content">
+<div id="summary" class="tab-pane fade in active">
+<p>
+<strong>Last updated:</strong> 2022-01-14
+</p>
+<p>
+<strong>Checks:</strong> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> 7 <span class="glyphicon glyphicon-exclamation-sign text-danger" aria-hidden="true"></span> 0
+</p>
+<p>
+<strong>Knit directory:</strong> <code>cacoaAnalysis/</code> <span class="glyphicon glyphicon-question-sign" aria-hidden="true" title="This is the local directory in which the code in this file was executed."> </span>
+</p>
+<p>
+This reproducible <a href="http://rmarkdown.rstudio.com">R Markdown</a> analysis was created with <a
+  href="https://github.com/jdblischak/workflowr">workflowr</a> (version 1.6.2). The <em>Checks</em> tab describes the reproducibility checks that were applied when the results were created. The <em>Past versions</em> tab lists the development history.
+</p>
+<hr>
+</div>
+<div id="checks" class="tab-pane fade">
+<div id="workflowr-checks" class="panel-group">
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongRMarkdownfilestronguptodate"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>R Markdown file:</strong> up-to-date </a>
+</p>
+</div>
+<div id="strongRMarkdownfilestronguptodate" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great! Since the R Markdown file has been committed to the Git repository, you know the exact version of the code that produced these results.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongEnvironmentstrongempty"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Environment:</strong> empty </a>
+</p>
+</div>
+<div id="strongEnvironmentstrongempty" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! The global environment was empty. Objects defined in the global environment can affect the analysis in your R Markdown file in unknown ways. For reproduciblity it's best to always run the code in an empty environment.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongSeedstrongcodesetseed20211123code"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Seed:</strong> <code>set.seed(20211123)</code> </a>
+</p>
+</div>
+<div id="strongSeedstrongcodesetseed20211123code" class="panel-collapse collapse">
+<div class="panel-body">
+<p>The command <code>set.seed(20211123)</code> was run prior to running the code in the R Markdown file. Setting a seed ensures that any results that rely on randomness, e.g. subsampling or permutations, are reproducible.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongSessioninformationstrongrecorded"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Session information:</strong> recorded </a>
+</p>
+</div>
+<div id="strongSessioninformationstrongrecorded" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! Recording the operating system, R version, and package versions is critical for reproducibility.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongCachestrongnone"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Cache:</strong> none </a>
+</p>
+</div>
+<div id="strongCachestrongnone" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Nice! There were no cached chunks for this analysis, so you can be confident that you successfully produced the results during this run.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongFilepathsstrongrelative"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>File paths:</strong> relative </a>
+</p>
+</div>
+<div id="strongFilepathsstrongrelative" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! Using relative paths to the files within your workflowr project makes it easier to run your code on other machines.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongRepositoryversionstrongahrefhttpsgithubcomkharchenkolabcacoaAnalysistree03d3952a013a5af9761e58ca73c8965b5ec7782ftargetblank03d3952a"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Repository version:</strong> <a href="https://github.com/kharchenkolab/cacoaAnalysis/tree/03d3952a013a5af9761e58ca73c8965b5ec7782f" target="_blank">03d3952</a> </a>
+</p>
+</div>
+<div id="strongRepositoryversionstrongahrefhttpsgithubcomkharchenkolabcacoaAnalysistree03d3952a013a5af9761e58ca73c8965b5ec7782ftargetblank03d3952a" class="panel-collapse collapse">
+<div class="panel-body">
+<p>
+Great! You are using Git for version control. Tracking code development and connecting the code version to the results is critical for reproducibility.
+</p>
+<p>
+The results in this page were generated with repository version <a href="https://github.com/kharchenkolab/cacoaAnalysis/tree/03d3952a013a5af9761e58ca73c8965b5ec7782f" target="_blank">03d3952</a>. See the <em>Past versions</em> tab to see a history of the changes made to the R Markdown and HTML files.
+</p>
+<p>
+Note that you need to be careful to ensure that all relevant files for the analysis have been committed to Git prior to generating the results (you can use <code>wflow_publish</code> or <code>wflow_git_commit</code>). workflowr only checks the R Markdown file, but you know if there are other scripts or data files that it depends on. Below is the status of the Git repository when the results were generated:
+</p>
+<pre><code>
+Ignored files:
+    Ignored:    .Rhistory
+    Ignored:    .Rproj.user/
+    Ignored:    analysis/.Rhistory
+    Ignored:    analysis/figure_cluster_based_de_bio.nb.html
+    Ignored:    analysis/figure_cluster_free_expression.nb.html
+    Ignored:    analysis/figure_compositional.nb.html
+    Ignored:    analysis/figure_compositional_cf.nb.html
+    Ignored:    analysis/figure_expression_shifts.nb.html
+    Ignored:    analysis/figure_heterogeneity.nb.html
+    Ignored:    analysis/figure_interpretation.nb.html
+    Ignored:    analysis/prepare_cacoa_results.nb.html
+    Ignored:    analysis/preprocess.nb.html
+    Ignored:    analysis/report_asd.nb.html
+    Ignored:    analysis/report_az.nb.html
+    Ignored:    analysis/report_ep.nb.html
+    Ignored:    analysis/report_ms.nb.html
+    Ignored:    analysis/report_pf.nb.html
+    Ignored:    analysis/report_scc.nb.html
+    Ignored:    analysis/simulation_distances.nb.html
+    Ignored:    analysis/simulation_variance.nb.html
+    Ignored:    cache/
+    Ignored:    data/ASD/
+    Ignored:    data/AZ/
+    Ignored:    data/EP/
+    Ignored:    data/MS/
+    Ignored:    data/PF/
+    Ignored:    data/SCC/
+    Ignored:    man/
+    Ignored:    output/figures/
+
+Unstaged changes:
+    Modified:   analysis/index.Rmd
+
+</code></pre>
+<p>
+Note that any generated files, e.g. HTML, png, CSS, etc., are not included in this status report because it is ok for generated content to have uncommitted changes.
+</p>
+</div>
+</div>
+</div>
+</div>
+<hr>
+</div>
+<div id="versions" class="tab-pane fade">
+
+<p>
+These are the previous versions of the repository in which changes were made to the R Markdown (<code>analysis/figure_interpretation.Rmd</code>) and HTML (<code>docs/figure_interpretation.html</code>) files. If you've configured a remote Git repository (see <code>?wflow_git_remote</code>), click on the hyperlinks in the table below to view the files as they were in that past version.
+</p>
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+File
+</th>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+<th>
+Message
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Rmd
+</td>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/03d3952a013a5af9761e58ca73c8965b5ec7782f/analysis/figure_interpretation.Rmd" target="_blank">03d3952</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2022-01-14
+</td>
+<td>
+Updated interpretation figure
+</td>
+</tr>
+<tr>
+<td>
+Rmd
+</td>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/c4d4786b71ce7ccd2f6bcb95756bf43e5cdef649/analysis/figure_interpretation.Rmd" target="_blank">c4d4786</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-27
+</td>
+<td>
+Interpretation figure
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<hr>
+</div>
+</div>
+</div>
+<div id="epithelial-cells" class="section level2">
+<h2>Epithelial cells</h2>
+<div id="extract" class="section level3">
+<h3>Extract</h3>
+<pre class="r"><code>cao_ept &lt;- readOrCreate(CachePath(&quot;cao_pf_ept.rds&quot;), function() {
+  cao.pf &lt;- read_rds(DataPath(&quot;PF/cao.rds&quot;)) %&gt;% Cacoa$new()
+  epithelial.types &lt;- c(
+    &quot;AT1&quot;, &quot;Transitional AT2&quot;, &quot;AT2&quot;, &quot;Basal&quot;, &quot;KRT5-/KRT17+&quot;, &quot;MUC5AC+ High&quot;, &quot;MUC5B+&quot;,
+    &quot;Proliferating Epithelial Cells&quot;, &quot;SCGB3A2+&quot;, &quot;SCGB3A2+ SCGB1A1+&quot;
+  )
+  
+  ept.cms &lt;- lapply(cao.pf$data.object$samples, function(p2) {
+    p2$misc$rawCounts %&gt;% .[cao.pf$cell.groups[rownames(.)] %in% epithelial.types,] %&gt;% t()
+  }) %&gt;% .[sapply(., ncol) &gt; 80]
+  
+  ept.p2s &lt;- plapply(ept.cms, createPagoda, n.pcs=50, n.cores=N_CORES, progress=TRUE,
+                     mc.preschedule=TRUE)
+  if (&quot;value&quot; %in% names(ept.p2s)) ept.p2s &lt;- ept.p2s$value
+  
+  ept.con &lt;- conos::Conos$new(ept.p2s, n.cores=N_CORES)
+  ept.con$buildGraph(k=30, k.self.weight=0.5)
+  ept.con$embedGraph(min.prob.lower=1e-4, method=&quot;UMAP&quot;, verbose=FALSE)
+  
+  cao.ept &lt;- Cacoa$new(
+    ept.con, cell.groups=cao.pf$cell.groups[names(ept.con$getDatasetPerCell())], 
+    sample.groups=cao.pf$sample.groups[names(ept.con$samples)], 
+    ref.level=cao.pf$ref.level, target.level=cao.pf$target.level, n.cores=N_CORES
+  )
+  cao.ept$plot.theme %&lt;&gt;% `+`(theme(legend.background=element_blank()))
+  
+  cao.ept$estimateDEPerCellType(independent.filtering=TRUE, test=&quot;DESeq2.Wald&quot;)
+  cao.ept$estimateOntology(org.db=org.db, type=&#39;GSEA&#39;)
+  return(cao.ept)
+}) %&gt;% Cacoa$new()</code></pre>
+</div>
+<div id="cluster-based" class="section level3">
+<h3>Cluster-based</h3>
+<pre class="r"><code>cao_ept$estimateOntology(org.db=org.db, type=&#39;GSEA&#39;) # TODO: remove this</code></pre>
+<pre class="r"><code>gg_at_apopt &lt;- cao_ept$plotOntologyHeatmap(
+  name=&#39;GSEA&#39;, genes=&quot;up&quot;, description.regex=&#39;death|apopt|proliferation&#39;, min.genes=10,
+  description.exclude.regex=&#39;neur&#39;, max.log.p=5
+)
+
+gg_at_apopt</code></pre>
+<p><img src="figure/figure_interpretation.Rmd/unnamed-chunk-3-1.png" width="624" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>immune_regex &lt;- &#39;vir|immune|interferon|inflam&#39;
+gg_at_immune &lt;- cao_ept$plotOntologyHeatmap(
+  name=&#39;GSEA&#39;, genes=&quot;all&quot;, legend.title=&#39;-log10(p-value) * S&#39;,
+  description.regex=immune_regex, min.genes=10, max.log.p=5
+)
+
+gg_at_immune</code></pre>
+<p><img src="figure/figure_interpretation.Rmd/unnamed-chunk-4-1.png" width="576" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>gg_at_matrix &lt;- cao_ept$plotOntologyHeatmap(
+  name=&#39;GSEA&#39;, genes=&quot;up&quot;, description.regex=&#39;matrix|mesen&#39;, min.genes=10, max.log.p=5
+)
+
+gg_at_matrix</code></pre>
+<p><img src="figure/figure_interpretation.Rmd/unnamed-chunk-5-1.png" width="480" style="display: block; margin: auto;" /></p>
+</div>
+<div id="cluster-free" class="section level3">
+<h3>Cluster-free</h3>
+<pre class="r"><code>cao_ept$estimateClusterFreeDE(n.top.genes=1000, min.expr.frac=0.01, adjust.pvalues=TRUE, 
+                              smooth=TRUE)</code></pre>
+<pre><code>Estimating cluster-free Z-scores for 1000 most expressed genes</code></pre>
+<pre><code>0%   10   20   30   40   50   60   70   80   90   100%
+[----|----|----|----|----|----|----|----|----|----|
+***************************************************</code></pre>
+<div id="gene-programs" class="section level4">
+<h4>Gene programs</h4>
+<pre class="r"><code>cao_ept$estimateGenePrograms(n.programs=9, z.adj=TRUE, abs.scores=TRUE, smooth=FALSE, verbose=FALSE)</code></pre>
+<pre class="r"><code>cao_ept$plotGeneProgramScores(legend.position=c(0, 1), size=0.1, alpha=0.5, plot.na=FALSE,
+                              adj.list=theme(plot.margin=margin()))</code></pre>
+<p><img src="figure/figure_interpretation.Rmd/unnamed-chunk-8-1.png" width="1344" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>ggs_cf_scores &lt;- cao_ept$plotGeneProgramScores(
+  prog.ids=c(6, 8), legend.position=c(0, 1), size=0.1, alpha=0.3, build.panel=FALSE, 
+  plot.na=FALSE, adj.list=theme(plot.margin=margin(), plot.title=element_blank())
+)
+
+plot_grid(plotlist=ggs_cf_scores)</code></pre>
+<p><img src="figure/figure_interpretation.Rmd/unnamed-chunk-9-1.png" width="576" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>go_env &lt;- cao_ept$getGOEnvironment(org.db=org.db)</code></pre>
+<pre><code>Using stored GO environment. Use `ignore.cache=TRUE` if you want to re-estimate it. Set `ignore.cache=FALSE` to suppress this message.</code></pre>
+<pre class="r"><code>gene_universe_global &lt;- colnames(cao_ept$test.results$cluster.free.de$z.adj) %&gt;% 
+  cacoa:::mapGeneIds(org.db)
+length(gene_universe_global)</code></pre>
+<pre><code>[1] 932</code></pre>
+<pre class="r"><code>t_scores &lt;- c(6, 8) %&gt;% 
+  {setNames(cao_ept$test.results$gene.programs$sim.scores[.], .)} %&gt;% 
+  lapply(function(x) x[x &gt; 0.5])
+sapply(t_scores, length)</code></pre>
+<pre><code>  6   8 
+104  47 </code></pre>
+<pre class="r"><code>go_global &lt;- lapply(t_scores, function(x) head(names(x[x &gt; 0.5]), 50)) %&gt;% 
+  lapply(cacoa:::mapGeneIds, org.db) %&gt;% 
+  cacoa:::estimateEnrichedGO(org.db=org.db, go.environment=go_env, universe=gene_universe_global)
+
+go_dfs &lt;- lapply(go_global$BP, function(r) filter(r@result, p.adjust &lt; 0.05)) %&gt;% 
+  .[sapply(., nrow) &gt; 0]
+
+sapply(go_dfs, nrow)</code></pre>
+<pre><code> 6  8 
+11 25 </code></pre>
+</div>
+<div id="at2---at1" class="section level4">
+<h4>AT2 -&gt; AT1</h4>
+<pre class="r"><code>go_dfs$`6` %$% setNames(strsplit(geneID, &quot;/&quot;), Description) %&gt;% 
+  cacoa:::estimateClusterPerGO(cut.h=0.4) %&gt;% {split(names(.), .)} %&gt;% 
+  sapply(paste, collapse=&#39;&quot;; &quot;&#39;) %&gt;% {paste0(&#39;&quot;&#39;, ., &#39;&quot;\n&#39;)} %&gt;% cat()</code></pre>
+<pre><code>&quot;cellular lipid metabolic process&quot;; &quot;lipid metabolic process&quot;
+ &quot;small molecule metabolic process&quot;; &quot;organic acid metabolic process&quot;; &quot;carboxylic acid metabolic process&quot;; &quot;oxoacid metabolic process&quot;
+ &quot;small molecule catabolic process&quot;
+ &quot;fatty acid metabolic process&quot;
+ &quot;fatty acid oxidation&quot;; &quot;lipid oxidation&quot;; &quot;lipid modification&quot;</code></pre>
+<pre class="r"><code>gg_go_at &lt;- clusteredOntologyDotplot(go_global$BP$`6`, orderBy=&#39;x&#39;, cut.h=0.4)
+gg_go_at</code></pre>
+<p><img src="figure/figure_interpretation.Rmd/unnamed-chunk-13-1.png" width="624" style="display: block; margin: auto;" /></p>
+</div>
+<div id="transitional-state-program" class="section level4">
+<h4>Transitional state program</h4>
+<pre class="r"><code>c_go_clusts &lt;- go_dfs$`8` %$% setNames(strsplit(geneID, &quot;/&quot;), Description) %&gt;% 
+  cacoa:::estimateClusterPerGO(cut.h=0.4) %&gt;% {split(names(.), .)}
+
+c_go_clusts %&gt;% sapply(paste, collapse=&#39;&quot;; &quot;&#39;) %&gt;% {paste0(&#39;&quot;&#39;, ., &#39;&quot;\n&#39;)} %&gt;% cat</code></pre>
+<pre><code>&quot;regulation of viral entry into host cell&quot;; &quot;modulation by symbiont of entry into host&quot;; &quot;negative regulation of viral entry into host cell&quot;; &quot;negative regulation of viral life cycle&quot;; &quot;regulation of viral life cycle&quot;; &quot;negative regulation of viral process&quot;; &quot;viral entry into host cell&quot;; &quot;entry into host&quot;; &quot;regulation of viral process&quot;; &quot;regulation of biological process involved in symbiotic interaction&quot;; &quot;movement in host environment&quot;; &quot;biological process involved in interaction with host&quot;
+ &quot;response to interferon-gamma&quot;
+ &quot;innate immune response&quot;; &quot;defense response&quot;; &quot;defense response to other organism&quot;; &quot;response to external biotic stimulus&quot;; &quot;response to other organism&quot;
+ &quot;response to external stimulus&quot;; &quot;immune system process&quot;; &quot;response to stress&quot;; &quot;cellular response to chemical stimulus&quot;
+ &quot;cytokine-mediated signaling pathway&quot;; &quot;cellular response to cytokine stimulus&quot;; &quot;response to cytokine&quot;</code></pre>
+<pre class="r"><code>gg_go_trans &lt;- clusteredOntologyDotplot(go_global$BP[[&quot;8&quot;]], orderBy=&#39;x&#39;, cut.h=0.4)
+gg_go_trans</code></pre>
+<p><img src="figure/figure_interpretation.Rmd/unnamed-chunk-15-1.png" width="480" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>cao_ept$plot.params &lt;- list(size=0.5, alpha=0.5)
+ggs_at_genes &lt;- c(&quot;AGER&quot;, &quot;HOPX&quot;, &quot;SFTPC&quot;) %&gt;% sccore::sn() %&gt;% lapply(function(gn) {
+  cao_ept$plotEmbedding(colors=cao_ept$cache$joint.count.matrix.norm[,gn], legend.title=&quot;Expr.&quot;,
+                        legend.position=c(0, 1))
+})
+
+ggs_at_genes</code></pre>
+<pre><code>$AGER</code></pre>
+<p><img src="figure/figure_interpretation.Rmd/unnamed-chunk-16-1.png" width="384" style="display: block; margin: auto;" /></p>
+<pre><code>
+$HOPX</code></pre>
+<p><img src="figure/figure_interpretation.Rmd/unnamed-chunk-16-2.png" width="384" style="display: block; margin: auto;" /></p>
+<pre><code>
+$SFTPC</code></pre>
+<p><img src="figure/figure_interpretation.Rmd/unnamed-chunk-16-3.png" width="384" style="display: block; margin: auto;" /></p>
+</div>
+</div>
+</div>
+<div id="endothelial-cells" class="section level2">
+<h2>Endothelial cells</h2>
+<pre class="r"><code># Requires running cluster-free expression figure first
+cao_endo &lt;- read_rds(CachePath(&quot;cao_pf_endo.rds&quot;)) %&gt;% Cacoa$new()
+cao_endo$estimateOntology(type=&quot;GSEA&quot;, org.db=org.Hs.eg.db::org.Hs.eg.db)</code></pre>
+<pre class="r"><code>gg_end_viral &lt;- cao_endo$plotOntologyHeatmap(
+  name=&#39;GSEA&#39;, genes=&quot;all&quot;, legend.title=&#39;-log10(p-value) * S&#39;,
+  description.regex=&#39;vir|immune|interferon|inflam&#39;, min.genes=10, max.log.p=5,
+  description.exclude.regex=&#39;built from&#39; # Remove one super-long GO for cluster name
+)
+
+gg_end_viral</code></pre>
+<p><img src="figure/figure_interpretation.Rmd/unnamed-chunk-18-1.png" width="432" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>cao_endo$plotOntologyHeatmap(name=&#39;GSEA&#39;, genes=&quot;up&quot;, description.regex=&#39;matrix|mesen&#39;)</code></pre>
+<p><img src="figure/figure_interpretation.Rmd/unnamed-chunk-19-1.png" width="480" style="display: block; margin: auto;" /></p>
+</div>
+<div id="compile-the-figure" class="section level2">
+<h2>Compile the figure</h2>
+<pre class="r"><code>theme_ax &lt;- theme(
+  axis.text.x=element_text(size=8),
+  axis.text.y=element_text(size=8, lineheight=0.75),
+  plot.title=element_blank(),
+  plot.margin=margin()
+)
+
+fill_guide &lt;- guides(fill=guide_colorbar(
+  title=&#39;-log10(p-value) * S&#39;, title.theme=element_text(size=12), 
+  title.position=&quot;top&quot;
+))
+
+fill_scale &lt;- gg_at_immune$scales$scales[[3]]
+
+plt_list &lt;- list(gg_at_apopt, gg_at_immune, gg_at_matrix, gg_end_viral) %&gt;% lapply(function(gg) {
+  levels(gg$data$G1) %&lt;&gt;% str_wrap(50)
+  gg &lt;- gg + theme_ax + fill_guide + fill_scale + theme_legend_position(&quot;none&quot;)
+  gg
+})</code></pre>
+<pre><code>Scale for &#39;fill&#39; is already present. Adding another scale for &#39;fill&#39;, which
+will replace the existing scale.
+Scale for &#39;fill&#39; is already present. Adding another scale for &#39;fill&#39;, which
+will replace the existing scale.
+Scale for &#39;fill&#39; is already present. Adding another scale for &#39;fill&#39;, which
+will replace the existing scale.
+Scale for &#39;fill&#39; is already present. Adding another scale for &#39;fill&#39;, which
+will replace the existing scale.</code></pre>
+<pre class="r"><code>plt_list[[2]] %&lt;&gt;% {. + theme(
+  legend.position=c(2.3, 1.3), legend.justification=c(1, 1), 
+  legend.direction=&quot;horizontal&quot;, legend.margin=margin(),
+  legend.box.margin=margin(),
+  legend.key.height=unit(12, &quot;pt&quot;), legend.key.width=unit(16, &quot;pt&quot;)
+)}
+
+go_fill_scale &lt;- scale_color_continuous(low=&quot;red&quot;, high=&quot;blue&quot;, limits=c(0, 0.05),
+                                        guide=guide_colorbar(reverse=TRUE))
+go_size_scale &lt;- scale_size_continuous(limits=c(4, 20))
+
+gg_go_at %&lt;&gt;% {. + go_fill_scale + go_size_scale + xlab(&quot;Gene ratio&quot;)}</code></pre>
+<pre><code>Scale for &#39;colour&#39; is already present. Adding another scale for &#39;colour&#39;,
+which will replace the existing scale.</code></pre>
+<pre><code>Scale for &#39;size&#39; is already present. Adding another scale for &#39;size&#39;, which
+will replace the existing scale.</code></pre>
+<pre class="r"><code>gg_go_trans %&lt;&gt;% {. + go_fill_scale + go_size_scale + xlab(&quot;Gene ratio&quot;)}</code></pre>
+<pre><code>Scale for &#39;colour&#39; is already present. Adding another scale for &#39;colour&#39;,
+which will replace the existing scale.
+Scale for &#39;size&#39; is already present. Adding another scale for &#39;size&#39;, which
+will replace the existing scale.</code></pre>
+<pre class="r"><code>go_leg_grob &lt;- ggpubr::get_legend(gg_go_at)
+
+ggs_cf_scores_rast &lt;- lapply(ggs_cf_scores, ggrastr::rasterise, dev=&quot;ragg_png&quot;, dpi=100)
+
+plot_grid(
+  plot_grid(
+    plotlist=plt_list,
+    ncol=2, rel_heights=c(1, 0.6), align=&quot;hv&quot;, scale=0.95
+  ),
+  plot_grid(
+    plot_grid(
+      ggs_cf_scores_rast[[1]] + 
+        theme(legend.key.width=unit(8, &quot;pt&quot;), legend.key.height=unit(10, &quot;pt&quot;)),
+      ggs_cf_scores_rast[[2]] + theme(legend.position=&quot;none&quot;),
+      ncol=1, scale=0.97
+    ),
+    plot_grid(
+      gg_go_at + theme_ax + theme(legend.position=&quot;none&quot;, axis.text.y=element_text(size=10)),
+      gg_go_trans + theme_ax + theme(legend.position=&quot;none&quot;, axis.text.y=element_text(size=10)),
+      ncol=1, align=&quot;v&quot;, scale=0.95
+    ),
+    go_leg_grob,
+    nrow=1, rel_widths=c(1, 2, 0.5)
+  ),
+  ncol=1, rel_heights=c(7.5, 3.5), scale=0.97
+)</code></pre>
+<p><img src="figure/figure_interpretation.Rmd/unnamed-chunk-20-1.png" width="816" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>ggsave(figurePath(&quot;7_functional_interpretation.pdf&quot;))</code></pre>
+<pre><code>Saving 8.5 x 11 in image</code></pre>
+<br>
+<p>
+<button type="button" class="btn btn-default btn-workflowr btn-workflowr-sessioninfo" data-toggle="collapse" data-target="#workflowr-sessioninfo" style="display: block;">
+<span class="glyphicon glyphicon-wrench" aria-hidden="true"></span> Session information
+</button>
+</p>
+<div id="workflowr-sessioninfo" class="collapse">
+<pre class="r"><code>sessionInfo()</code></pre>
+<pre><code>R version 4.0.3 (2020-10-10)
+Platform: x86_64-pc-linux-gnu (64-bit)
+Running under: Ubuntu 18.04.6 LTS
+
+Matrix products: default
+BLAS:   /usr/local/R/R-4.0.3/lib/R/lib/libRblas.so
+LAPACK: /usr/local/R/R-4.0.3/lib/R/lib/libRlapack.so
+
+locale:
+[1] C
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+ [1] cacoaAnalysis_0.1.0 dataorganizer_0.1.0 sccore_1.0.1       
+ [4] cacoa_0.2.0         cowplot_1.1.1       conos_1.4.4        
+ [7] igraph_1.2.6        Matrix_1.2-18       magrittr_2.0.1     
+[10] forcats_0.5.1       stringr_1.4.0       dplyr_1.0.7        
+[13] purrr_0.3.4         readr_1.4.0         tidyr_1.1.4        
+[16] tibble_3.1.5        ggplot2_3.3.5       tidyverse_1.3.0    
+[19] workflowr_1.6.2    
+
+loaded via a namespace (and not attached):
+  [1] utf8_1.2.2             reticulate_1.22        R.utils_2.10.1        
+  [4] tidyselect_1.1.1       RSQLite_2.2.8          AnnotationDbi_1.52.0  
+  [7] grid_4.0.3             BiocParallel_1.24.1    Rtsne_0.15            
+ [10] scatterpie_0.1.5       devtools_2.3.2         munsell_0.5.0         
+ [13] ragg_0.4.1             codetools_0.2-16       withr_2.4.2           
+ [16] GOSemSim_2.16.1        colorspace_2.0-2       Biobase_2.50.0        
+ [19] highr_0.9              knitr_1.36             rstudioapi_0.13       
+ [22] stats4_4.0.3           ggsignif_0.6.1         pbmcapply_1.5.0       
+ [25] DOSE_3.16.0            labeling_0.4.2         git2r_0.27.1          
+ [28] urltools_1.7.3         polyclip_1.10-0        farver_2.1.0          
+ [31] bit64_4.0.5            downloader_0.4         rprojroot_2.0.2       
+ [34] Matrix.utils_0.9.8     vctrs_0.3.8            generics_0.1.0        
+ [37] xfun_0.26              R6_2.5.1               doParallel_1.0.16     
+ [40] graphlayouts_0.7.1     ggbeeswarm_0.6.0       clue_0.3-59           
+ [43] fgsea_1.16.0           cachem_1.0.6           assertthat_0.2.1      
+ [46] promises_1.1.1         scales_1.1.1           ggraph_2.0.4          
+ [49] enrichplot_1.10.1      beeswarm_0.4.0         gtable_0.3.0          
+ [52] processx_3.4.5         tidygraph_1.2.0        drat_0.1.8            
+ [55] rlang_0.4.11           systemfonts_1.0.0      GlobalOptions_0.1.2   
+ [58] splines_4.0.3          rstatix_0.7.0          broom_0.7.9           
+ [61] brew_1.0-6             BiocManager_1.30.10    yaml_2.2.1            
+ [64] reshape2_1.4.4         abind_1.4-5            modelr_0.1.8          
+ [67] backports_1.2.1        httpuv_1.5.4           qvalue_2.22.0         
+ [70] clusterProfiler_3.18.0 tools_4.0.3            usethis_1.6.3         
+ [73] ellipsis_0.3.2         jquerylib_0.1.4        RColorBrewer_1.1-2    
+ [76] BiocGenerics_0.36.1    sessioninfo_1.1.1      Rcpp_1.0.7            
+ [79] plyr_1.8.6             ps_1.4.0               prettyunits_1.1.1     
+ [82] ggpubr_0.4.0           dendsort_0.3.3         viridis_0.6.1         
+ [85] GetoptLong_1.0.5       S4Vectors_0.28.1       grr_0.9.5             
+ [88] haven_2.4.1            ggrepel_0.9.1          cluster_2.1.0         
+ [91] fs_1.5.0               data.table_1.14.2      DO.db_2.9             
+ [94] openxlsx_4.2.3         circlize_0.4.13        triebeard_0.3.0       
+ [97] reprex_0.3.0           whisker_0.4            matrixStats_0.61.0    
+[100] pkgload_1.2.1          hms_1.1.1              evaluate_0.14         
+[103] rio_0.5.26             RMTstat_0.3            readxl_1.3.1          
+[106] N2R_0.1.1              IRanges_2.24.1         gridExtra_2.3         
+[109] shape_1.4.6            testthat_3.0.0         compiler_4.0.3        
+[112] shadowtext_0.0.7       crayon_1.4.1           R.oo_1.24.0           
+[115] htmltools_0.5.2        mgcv_1.8-33            later_1.1.0.1         
+[118] lubridate_1.7.9.2      DBI_1.1.1              tweenr_1.0.1          
+[121] dbplyr_2.0.0           pagoda2_1.0.7          ComplexHeatmap_2.9.4  
+[124] MASS_7.3-53            car_3.0-10             cli_3.0.1             
+[127] R.methodsS3_1.8.1      parallel_4.0.3         pkgconfig_2.0.3       
+[130] rvcheck_0.1.8          foreign_0.8-80         xml2_1.3.2            
+[133] foreach_1.5.1          vipor_0.4.5            leidenAlg_0.1.0       
+[136] rvest_0.3.6            callr_3.5.1            digest_0.6.28         
+[139] fastmatch_1.1-0        rmarkdown_2.11         cellranger_1.1.0      
+[142] Rook_1.1-1             curl_4.3.2             rjson_0.2.20          
+[145] lifecycle_1.0.1        nlme_3.1-149           jsonlite_1.7.2        
+[148] carData_3.0-4          viridisLite_0.4.0      desc_1.3.0            
+[151] fansi_0.5.0            pillar_1.6.3           lattice_0.20-41       
+[154] GO.db_3.12.1           ggrastr_1.0.1          fastmap_1.1.0         
+[157] httr_1.4.2             pkgbuild_1.1.0         glue_1.4.2            
+[160] remotes_2.2.0          zip_2.2.0              png_0.1-7             
+[163] iterators_1.0.13       bit_4.0.4              ggforce_0.3.2         
+[166] stringi_1.7.5          blob_1.2.2             textshaping_0.2.1     
+[169] org.Hs.eg.db_3.12.0    memoise_2.0.0          irlba_2.3.3           
+[172] ape_5.5               </code></pre>
+</div>
+</div>
+
+
+<!-- Adjust MathJax settings so that all math formulae are shown using
+TeX fonts only; see
+http://docs.mathjax.org/en/latest/configuration.html.  This will make
+the presentation more consistent at the cost of the webpage sometimes
+taking slightly longer to load. Note that this only works because the
+footer is added to webpages before the MathJax javascript. -->
+<script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    "HTML-CSS": { availableFonts: ["TeX"] }
+  });
+</script>
+
+
+</div>
+</div>
+
+</div>
+
+<script>
+
+// add bootstrap table styles to pandoc tables
+function bootstrapStylePandocTables() {
+  $('tr.odd').parent('tbody').parent('table').addClass('table table-condensed');
+}
+$(document).ready(function () {
+  bootstrapStylePandocTables();
+});
+
+
+</script>
+
+<!-- tabsets -->
+
+<script>
+$(document).ready(function () {
+  window.buildTabsets("TOC");
+});
+
+$(document).ready(function () {
+  $('.tabset-dropdown > .nav-tabs > li').click(function () {
+    $(this).parent().toggleClass('nav-tabs-open');
+  });
+});
+</script>
+
+<!-- code folding -->
+
+<script>
+$(document).ready(function ()  {
+
+    // temporarily add toc-ignore selector to headers for the consistency with Pandoc
+    $('.unlisted.unnumbered').addClass('toc-ignore')
+
+    // move toc-ignore selectors from section div to header
+    $('div.section.toc-ignore')
+        .removeClass('toc-ignore')
+        .children('h1,h2,h3,h4,h5').addClass('toc-ignore');
+
+    // establish options
+    var options = {
+      selectors: "h1,h2,h3",
+      theme: "bootstrap3",
+      context: '.toc-content',
+      hashGenerator: function (text) {
+        return text.replace(/[.\\/?&!#<>]/g, '').replace(/\s/g, '_');
+      },
+      ignoreSelector: ".toc-ignore",
+      scrollTo: 0
+    };
+    options.showAndHide = true;
+    options.smoothScroll = true;
+
+    // tocify
+    var toc = $("#TOC").tocify(options).data("toc-tocify");
+});
+</script>
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>
