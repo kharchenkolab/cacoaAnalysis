@@ -18,10 +18,6 @@ library(cowplot)
 library(cacoa)
 library(sccore)
 library(dataorganizer)
-# library(ggrastr)
-
-# options(ggrastr.default.dpi=100)
-# rast <- function(...) rasterise(..., dev="ragg_png")
 
 devtools::load_all()
 
@@ -69,7 +65,7 @@ cao_ept <- readOrCreate(CachePath("cao_pf_ept.rds"), function() {
 
 ### Cluster-based
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 cao_ept$estimateOntology(org.db=org.db, type='GSEA') # TODO: remove this
 ```
 
@@ -110,7 +106,7 @@ cao_ept$estimateClusterFreeDE(n.top.genes=1000, min.expr.frac=0.01, adjust.pvalu
 #### Gene programs
 
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 cao_ept$estimateGenePrograms(n.programs=9, z.adj=TRUE, abs.scores=TRUE, smooth=FALSE, verbose=FALSE)
 ```
 
