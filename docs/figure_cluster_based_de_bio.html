@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+
+<meta name="author" content="Viktor Petukhov" />
+
+<meta name="date" content="2022-01-14" />
+
+<title>Cluster-based DE, biological results</title>
+
+<script src="site_libs/jquery-3.6.0/jquery-3.6.0.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link href="site_libs/bootstrap-3.3.5/css/cosmo.min.css" rel="stylesheet" />
+<script src="site_libs/bootstrap-3.3.5/js/bootstrap.min.js"></script>
+<script src="site_libs/bootstrap-3.3.5/shim/html5shiv.min.js"></script>
+<script src="site_libs/bootstrap-3.3.5/shim/respond.min.js"></script>
+<style>h1 {font-size: 34px;}
+       h1.title {font-size: 38px;}
+       h2 {font-size: 30px;}
+       h3 {font-size: 24px;}
+       h4 {font-size: 18px;}
+       h5 {font-size: 16px;}
+       h6 {font-size: 12px;}
+       code {color: inherit; background-color: rgba(0, 0, 0, 0.04);}
+       pre:not([class]) { background-color: white }</style>
+<script src="site_libs/jqueryui-1.11.4/jquery-ui.min.js"></script>
+<link href="site_libs/tocify-1.9.1/jquery.tocify.css" rel="stylesheet" />
+<script src="site_libs/tocify-1.9.1/jquery.tocify.js"></script>
+<script src="site_libs/navigation-1.1/tabsets.js"></script>
+<link href="site_libs/highlightjs-9.12.0/textmate.css" rel="stylesheet" />
+<script src="site_libs/highlightjs-9.12.0/highlight.js"></script>
+
+<link rel="icon" href="https://github.com/workflowr/workflowr-assets/raw/master/img/reproducible.png">
+<!-- Add a small amount of space between sections. -->
+<style type="text/css">
+div.section {
+  padding-top: 12px;
+}
+</style>
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+<style type="text/css">code{white-space: pre;}</style>
+<script type="text/javascript">
+if (window.hljs) {
+  hljs.configure({languages: []});
+  hljs.initHighlightingOnLoad();
+  if (document.readyState && document.readyState === "complete") {
+    window.setTimeout(function() { hljs.initHighlighting(); }, 0);
+  }
+}
+</script>
+
+
+
+
+
+
+
+
+<style type = "text/css">
+.main-container {
+  max-width: 940px;
+  margin-left: auto;
+  margin-right: auto;
+}
+img {
+  max-width:100%;
+}
+.tabbed-pane {
+  padding-top: 12px;
+}
+.html-widget {
+  margin-bottom: 20px;
+}
+button.code-folding-btn:focus {
+  outline: none;
+}
+summary {
+  display: list-item;
+}
+pre code {
+  padding: 0;
+}
+</style>
+
+
+<style type="text/css">
+.dropdown-submenu {
+  position: relative;
+}
+.dropdown-submenu>.dropdown-menu {
+  top: 0;
+  left: 100%;
+  margin-top: -6px;
+  margin-left: -1px;
+  border-radius: 0 6px 6px 6px;
+}
+.dropdown-submenu:hover>.dropdown-menu {
+  display: block;
+}
+.dropdown-submenu>a:after {
+  display: block;
+  content: " ";
+  float: right;
+  width: 0;
+  height: 0;
+  border-color: transparent;
+  border-style: solid;
+  border-width: 5px 0 5px 5px;
+  border-left-color: #cccccc;
+  margin-top: 5px;
+  margin-right: -10px;
+}
+.dropdown-submenu:hover>a:after {
+  border-left-color: #adb5bd;
+}
+.dropdown-submenu.pull-left {
+  float: none;
+}
+.dropdown-submenu.pull-left>.dropdown-menu {
+  left: -100%;
+  margin-left: 10px;
+  border-radius: 6px 0 6px 6px;
+}
+</style>
+
+<script type="text/javascript">
+// manage active state of menu based on current page
+$(document).ready(function () {
+  // active menu anchor
+  href = window.location.pathname
+  href = href.substr(href.lastIndexOf('/') + 1)
+  if (href === "")
+    href = "index.html";
+  var menuAnchor = $('a[href="' + href + '"]');
+
+  // mark it active
+  menuAnchor.tab('show');
+
+  // if it's got a parent navbar menu mark it active as well
+  menuAnchor.closest('li.dropdown').addClass('active');
+
+  // Navbar adjustments
+  var navHeight = $(".navbar").first().height() + 15;
+  var style = document.createElement('style');
+  var pt = "padding-top: " + navHeight + "px; ";
+  var mt = "margin-top: -" + navHeight + "px; ";
+  var css = "";
+  // offset scroll position for anchor links (for fixed navbar)
+  for (var i = 1; i <= 6; i++) {
+    css += ".section h" + i + "{ " + pt + mt + "}\n";
+  }
+  style.innerHTML = "body {" + pt + "padding-bottom: 40px; }\n" + css;
+  document.head.appendChild(style);
+});
+</script>
+
+<!-- tabsets -->
+
+<style type="text/css">
+.tabset-dropdown > .nav-tabs {
+  display: inline-table;
+  max-height: 500px;
+  min-height: 44px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.tabset-dropdown > .nav-tabs > li.active:before {
+  content: "";
+  font-family: 'Glyphicons Halflings';
+  display: inline-block;
+  padding: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li.active:before {
+  content: "&#xe258;";
+  border: none;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open:before {
+  content: "";
+  font-family: 'Glyphicons Halflings';
+  display: inline-block;
+  padding: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs > li.active {
+  display: block;
+}
+
+.tabset-dropdown > .nav-tabs > li > a,
+.tabset-dropdown > .nav-tabs > li > a:focus,
+.tabset-dropdown > .nav-tabs > li > a:hover {
+  border: none;
+  display: inline-block;
+  border-radius: 4px;
+  background-color: transparent;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li {
+  display: block;
+  float: none;
+}
+
+.tabset-dropdown > .nav-tabs > li {
+  display: none;
+}
+</style>
+
+<!-- code folding -->
+
+
+
+<style type="text/css">
+
+#TOC {
+  margin: 25px 0px 20px 0px;
+}
+@media (max-width: 768px) {
+#TOC {
+  position: relative;
+  width: 100%;
+}
+}
+
+@media print {
+.toc-content {
+  /* see https://github.com/w3c/csswg-drafts/issues/4434 */
+  float: right;
+}
+}
+
+.toc-content {
+  padding-left: 30px;
+  padding-right: 40px;
+}
+
+div.main-container {
+  max-width: 1200px;
+}
+
+div.tocify {
+  width: 20%;
+  max-width: 260px;
+  max-height: 85%;
+}
+
+@media (min-width: 768px) and (max-width: 991px) {
+  div.tocify {
+    width: 25%;
+  }
+}
+
+@media (max-width: 767px) {
+  div.tocify {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+.tocify ul, .tocify li {
+  line-height: 20px;
+}
+
+.tocify-subheader .tocify-item {
+  font-size: 0.90em;
+}
+
+.tocify .list-group-item {
+  border-radius: 0px;
+}
+
+
+</style>
+
+
+
+</head>
+
+<body>
+
+
+<div class="container-fluid main-container">
+
+
+<!-- setup 3col/9col grid for toc_float and main content  -->
+<div class="row">
+<div class="col-xs-12 col-sm-4 col-md-3">
+<div id="TOC" class="tocify">
+</div>
+</div>
+
+<div class="toc-content col-xs-12 col-sm-8 col-md-9">
+
+
+
+
+<div class="navbar navbar-default  navbar-fixed-top" role="navigation">
+  <div class="container">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar">
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="index.html">cacoaAnalysis</a>
+    </div>
+    <div id="navbar" class="navbar-collapse collapse">
+      <ul class="nav navbar-nav">
+        <li>
+  <a href="index.html">Home</a>
+</li>
+<li>
+  <a href="about.html">About</a>
+</li>
+<li>
+  <a href="license.html">License</a>
+</li>
+      </ul>
+      <ul class="nav navbar-nav navbar-right">
+        
+      </ul>
+    </div><!--/.nav-collapse -->
+  </div><!--/.container -->
+</div><!--/.navbar -->
+
+<div id="header">
+
+
+
+<h1 class="title toc-ignore">Cluster-based DE, biological results</h1>
+<h4 class="author"><a href="https://github.com/VPetukhov/">Viktor Petukhov</a></h4>
+<h4 class="date">2022-01-14</h4>
+
+</div>
+
+
+<p>
+<button type="button" class="btn btn-default btn-workflowr btn-workflowr-report" data-toggle="collapse" data-target="#workflowr-report">
+<span class="glyphicon glyphicon-list" aria-hidden="true"></span> workflowr <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span>
+</button>
+</p>
+<div id="workflowr-report" class="collapse">
+<ul class="nav nav-tabs">
+<li class="active">
+<a data-toggle="tab" href="#summary">Summary</a>
+</li>
+<li>
+<a data-toggle="tab" href="#checks"> Checks <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> </a>
+</li>
+<li>
+<a data-toggle="tab" href="#versions">Past versions</a>
+</li>
+</ul>
+<div class="tab-content">
+<div id="summary" class="tab-pane fade in active">
+<p>
+<strong>Last updated:</strong> 2022-01-14
+</p>
+<p>
+<strong>Checks:</strong> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> 7 <span class="glyphicon glyphicon-exclamation-sign text-danger" aria-hidden="true"></span> 0
+</p>
+<p>
+<strong>Knit directory:</strong> <code>cacoaAnalysis/</code> <span class="glyphicon glyphicon-question-sign" aria-hidden="true" title="This is the local directory in which the code in this file was executed."> </span>
+</p>
+<p>
+This reproducible <a href="http://rmarkdown.rstudio.com">R Markdown</a> analysis was created with <a
+  href="https://github.com/jdblischak/workflowr">workflowr</a> (version 1.6.2). The <em>Checks</em> tab describes the reproducibility checks that were applied when the results were created. The <em>Past versions</em> tab lists the development history.
+</p>
+<hr>
+</div>
+<div id="checks" class="tab-pane fade">
+<div id="workflowr-checks" class="panel-group">
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongRMarkdownfilestronguptodate"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>R Markdown file:</strong> up-to-date </a>
+</p>
+</div>
+<div id="strongRMarkdownfilestronguptodate" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great! Since the R Markdown file has been committed to the Git repository, you know the exact version of the code that produced these results.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongEnvironmentstrongempty"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Environment:</strong> empty </a>
+</p>
+</div>
+<div id="strongEnvironmentstrongempty" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! The global environment was empty. Objects defined in the global environment can affect the analysis in your R Markdown file in unknown ways. For reproduciblity it's best to always run the code in an empty environment.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongSeedstrongcodesetseed20211123code"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Seed:</strong> <code>set.seed(20211123)</code> </a>
+</p>
+</div>
+<div id="strongSeedstrongcodesetseed20211123code" class="panel-collapse collapse">
+<div class="panel-body">
+<p>The command <code>set.seed(20211123)</code> was run prior to running the code in the R Markdown file. Setting a seed ensures that any results that rely on randomness, e.g. subsampling or permutations, are reproducible.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongSessioninformationstrongrecorded"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Session information:</strong> recorded </a>
+</p>
+</div>
+<div id="strongSessioninformationstrongrecorded" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! Recording the operating system, R version, and package versions is critical for reproducibility.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongCachestrongnone"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Cache:</strong> none </a>
+</p>
+</div>
+<div id="strongCachestrongnone" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Nice! There were no cached chunks for this analysis, so you can be confident that you successfully produced the results during this run.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongFilepathsstrongrelative"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>File paths:</strong> relative </a>
+</p>
+</div>
+<div id="strongFilepathsstrongrelative" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! Using relative paths to the files within your workflowr project makes it easier to run your code on other machines.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongRepositoryversionstrongahrefhttpsgithubcomkharchenkolabcacoaAnalysistree7a608258a98443b6a7261751df05ecf0af79c6ectargetblank7a60825a"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Repository version:</strong> <a href="https://github.com/kharchenkolab/cacoaAnalysis/tree/7a608258a98443b6a7261751df05ecf0af79c6ec" target="_blank">7a60825</a> </a>
+</p>
+</div>
+<div id="strongRepositoryversionstrongahrefhttpsgithubcomkharchenkolabcacoaAnalysistree7a608258a98443b6a7261751df05ecf0af79c6ectargetblank7a60825a" class="panel-collapse collapse">
+<div class="panel-body">
+<p>
+Great! You are using Git for version control. Tracking code development and connecting the code version to the results is critical for reproducibility.
+</p>
+<p>
+The results in this page were generated with repository version <a href="https://github.com/kharchenkolab/cacoaAnalysis/tree/7a608258a98443b6a7261751df05ecf0af79c6ec" target="_blank">7a60825</a>. See the <em>Past versions</em> tab to see a history of the changes made to the R Markdown and HTML files.
+</p>
+<p>
+Note that you need to be careful to ensure that all relevant files for the analysis have been committed to Git prior to generating the results (you can use <code>wflow_publish</code> or <code>wflow_git_commit</code>). workflowr only checks the R Markdown file, but you know if there are other scripts or data files that it depends on. Below is the status of the Git repository when the results were generated:
+</p>
+<pre><code>
+Ignored files:
+    Ignored:    .Rhistory
+    Ignored:    .Rproj.user/
+    Ignored:    analysis/.Rhistory
+    Ignored:    analysis/figure_cluster_based_de_bio.nb.html
+    Ignored:    analysis/figure_cluster_free_expression.nb.html
+    Ignored:    analysis/figure_compositional.nb.html
+    Ignored:    analysis/figure_compositional_cf.nb.html
+    Ignored:    analysis/figure_expression_shifts.nb.html
+    Ignored:    analysis/figure_heterogeneity.nb.html
+    Ignored:    analysis/figure_interpretation.nb.html
+    Ignored:    analysis/prepare_cacoa_results.nb.html
+    Ignored:    analysis/preprocess.nb.html
+    Ignored:    analysis/report_asd.nb.html
+    Ignored:    analysis/report_az.nb.html
+    Ignored:    analysis/report_ep.nb.html
+    Ignored:    analysis/report_ms.nb.html
+    Ignored:    analysis/report_pf.nb.html
+    Ignored:    analysis/report_scc.nb.html
+    Ignored:    analysis/simulation_distances.nb.html
+    Ignored:    analysis/simulation_variance.nb.html
+    Ignored:    cache/
+    Ignored:    data/ASD/
+    Ignored:    data/AZ/
+    Ignored:    data/EP/
+    Ignored:    data/MS/
+    Ignored:    data/PF/
+    Ignored:    data/SCC/
+    Ignored:    man/
+    Ignored:    output/figures/
+
+Unstaged changes:
+    Modified:   analysis/index.Rmd
+
+</code></pre>
+<p>
+Note that any generated files, e.g. HTML, png, CSS, etc., are not included in this status report because it is ok for generated content to have uncommitted changes.
+</p>
+</div>
+</div>
+</div>
+</div>
+<hr>
+</div>
+<div id="versions" class="tab-pane fade">
+
+<p>
+These are the previous versions of the repository in which changes were made to the R Markdown (<code>analysis/figure_cluster_based_de_bio.Rmd</code>) and HTML (<code>docs/figure_cluster_based_de_bio.html</code>) files. If you've configured a remote Git repository (see <code>?wflow_git_remote</code>), click on the hyperlinks in the table below to view the files as they were in that past version.
+</p>
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+File
+</th>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+<th>
+Message
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Rmd
+</td>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/84b53ef7032eeb3e6489c58b332f4500669295e9/analysis/figure_cluster_based_de_bio.Rmd" target="_blank">84b53ef</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-17
+</td>
+<td>
+Cluster-based DE figure
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<hr>
+</div>
+</div>
+</div>
+<pre class="r"><code>library(tidyverse)
+library(magrittr)
+library(conos)
+library(cowplot)
+library(cacoa)
+library(sccore)
+library(dataorganizer)
+
+devtools::load_all()
+
+theme_set(theme_bw())</code></pre>
+<pre class="r"><code>cao_scc &lt;- read_rds(DataPath(&quot;SCC/cao.rds&quot;)) %&gt;% Cacoa$new()</code></pre>
+<div id="main" class="section level2">
+<h2>Main</h2>
+<pre class="r"><code>ex_words &lt;- c(&#39;regulation&#39;, &#39;process&#39;, &#39;cell&#39;)
+cao_scc$plotOntologyHeatmapCollapsed(
+  name=&#39;GSEA&#39;, clust.method=&#39;ward.D&#39;, genes=&#39;up&#39;, n=25, exclude.words=ex_words
+)</code></pre>
+<p><img src="figure/figure_cluster_based_de_bio.Rmd/unnamed-chunk-2-1.png" width="672" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>ggsave(figurePath(&quot;5_de.pdf&quot;))</code></pre>
+</div>
+<div id="supplement" class="section level2">
+<h2>Supplement</h2>
+<pre class="r"><code>cao_scc$estimateOntologyFamilies(name=&#39;GSEA&#39;, p.adj=0.01)</code></pre>
+<pre><code>Warning: no DISPLAY variable so Tk is not available</code></pre>
+<pre class="r"><code>plt &lt;- cao_scc$plotOntologyFamily(
+  cell.type=&quot;NK&quot;, name=&quot;GSEA&quot;, genes=&quot;up&quot;, plot.type=&#39;minimal&#39;, family=1, 
+  legend.position=&quot;bottomright&quot;, font.size=24, string.length=14, legend.label.size=0.75
+)</code></pre>
+<p><img src="figure/figure_cluster_based_de_bio.Rmd/unnamed-chunk-4-1.png" width="816" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>pdf(figurePath(&#39;5s_de.pdf&#39;), width=8.5, height=5)
+Rgraphviz::renderGraph(plt)
+legend(&quot;bottomright&quot;,
+       legend=c(&quot;P &lt; 0.01&quot;,&quot;P &lt; 0.001&quot;),
+       fill=c(&quot;lightpink1&quot;,&quot;indianred2&quot;),
+       cex=0.75)
+dev.off()</code></pre>
+<pre><code>png 
+  2 </code></pre>
+<br>
+<p>
+<button type="button" class="btn btn-default btn-workflowr btn-workflowr-sessioninfo" data-toggle="collapse" data-target="#workflowr-sessioninfo" style="display: block;">
+<span class="glyphicon glyphicon-wrench" aria-hidden="true"></span> Session information
+</button>
+</p>
+<div id="workflowr-sessioninfo" class="collapse">
+<pre class="r"><code>sessionInfo()</code></pre>
+<pre><code>R version 4.0.3 (2020-10-10)
+Platform: x86_64-pc-linux-gnu (64-bit)
+Running under: Ubuntu 18.04.6 LTS
+
+Matrix products: default
+BLAS:   /usr/local/R/R-4.0.3/lib/R/lib/libRblas.so
+LAPACK: /usr/local/R/R-4.0.3/lib/R/lib/libRlapack.so
+
+locale:
+[1] C
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+ [1] DOSE_3.16.0         cacoaAnalysis_0.1.0 dataorganizer_0.1.0
+ [4] sccore_1.0.1        cacoa_0.2.0         cowplot_1.1.1      
+ [7] conos_1.4.4         igraph_1.2.6        Matrix_1.2-18      
+[10] magrittr_2.0.1      forcats_0.5.1       stringr_1.4.0      
+[13] dplyr_1.0.7         purrr_0.3.4         readr_1.4.0        
+[16] tidyr_1.1.4         tibble_3.1.5        ggplot2_3.3.5      
+[19] tidyverse_1.3.0     workflowr_1.6.2    
+
+loaded via a namespace (and not attached):
+  [1] utf8_1.2.2             reticulate_1.22        R.utils_2.10.1        
+  [4] tidyselect_1.1.1       RSQLite_2.2.8          AnnotationDbi_1.52.0  
+  [7] grid_4.0.3             BiocParallel_1.24.1    Rtsne_0.15            
+ [10] devtools_2.3.2         munsell_0.5.0          ragg_0.4.1            
+ [13] codetools_0.2-16       withr_2.4.2            colorspace_2.0-2      
+ [16] GOSemSim_2.16.1        Biobase_2.50.0         highr_0.9             
+ [19] knitr_1.36             rstudioapi_0.13        stats4_4.0.3          
+ [22] ggsignif_0.6.1         labeling_0.4.2         git2r_0.27.1          
+ [25] urltools_1.7.3         GenomeInfoDbData_1.2.4 GOfuncR_1.10.0        
+ [28] farver_2.1.0           bit64_4.0.5            rprojroot_2.0.2       
+ [31] Matrix.utils_0.9.8     vctrs_0.3.8            generics_0.1.0        
+ [34] xfun_0.26              GenomeInfoDb_1.26.7    R6_2.5.1              
+ [37] doParallel_1.0.16      ggbeeswarm_0.6.0       clue_0.3-59           
+ [40] bitops_1.0-7           fgsea_1.16.0           cachem_1.0.6          
+ [43] assertthat_0.2.1       promises_1.1.1         scales_1.1.1          
+ [46] beeswarm_0.4.0         gtable_0.3.0           processx_3.4.5        
+ [49] drat_0.1.8             rlang_0.4.11           systemfonts_1.0.0     
+ [52] GlobalOptions_0.1.2    splines_4.0.3          rstatix_0.7.0         
+ [55] broom_0.7.9            brew_1.0-6             yaml_2.2.1            
+ [58] reshape2_1.4.4         abind_1.4-5            modelr_0.1.8          
+ [61] backports_1.2.1        httpuv_1.5.4           qvalue_2.22.0         
+ [64] tcltk_4.0.3            tools_4.0.3            usethis_1.6.3         
+ [67] ellipsis_0.3.2         jquerylib_0.1.4        RColorBrewer_1.1-2    
+ [70] BiocGenerics_0.36.1    sessioninfo_1.1.1      Rcpp_1.0.7            
+ [73] plyr_1.8.6             zlibbioc_1.36.0        RCurl_1.98-1.5        
+ [76] ps_1.4.0               prettyunits_1.1.1      ggpubr_0.4.0          
+ [79] dendsort_0.3.3         GetoptLong_1.0.5       zoo_1.8-8             
+ [82] mapplots_1.5.1         S4Vectors_0.28.1       grr_0.9.5             
+ [85] haven_2.4.1            ggrepel_0.9.1          cluster_2.1.0         
+ [88] fs_1.5.0               data.table_1.14.2      DO.db_2.9             
+ [91] openxlsx_4.2.3         circlize_0.4.13        triebeard_0.3.0       
+ [94] reprex_0.3.0           whisker_0.4            matrixStats_0.61.0    
+ [97] pkgload_1.2.1          hms_1.1.1              evaluate_0.14         
+[100] rio_0.5.26             vioplot_0.3.5          RMTstat_0.3           
+[103] readxl_1.3.1           N2R_0.1.1              IRanges_2.24.1        
+[106] gridExtra_2.3          shape_1.4.6            testthat_3.0.0        
+[109] compiler_4.0.3         crayon_1.4.1           R.oo_1.24.0           
+[112] htmltools_0.5.2        mgcv_1.8-33            later_1.1.0.1         
+[115] lubridate_1.7.9.2      DBI_1.1.1              dbplyr_2.0.0          
+[118] pagoda2_1.0.7          ComplexHeatmap_2.9.4   MASS_7.3-53           
+[121] car_3.0-10             cli_3.0.1              R.methodsS3_1.8.1     
+[124] parallel_4.0.3         GenomicRanges_1.42.0   sm_2.2-5.6            
+[127] pkgconfig_2.0.3        foreign_0.8-80         xml2_1.3.2            
+[130] foreach_1.5.1          vipor_0.4.5            XVector_0.30.0        
+[133] leidenAlg_0.1.0        rvest_0.3.6            callr_3.5.1           
+[136] digest_0.6.28          graph_1.68.0           fastmatch_1.1-0       
+[139] rmarkdown_2.11         cellranger_1.1.0       Rook_1.1-1            
+[142] curl_4.3.2             gtools_3.9.2           rjson_0.2.20          
+[145] lifecycle_1.0.1        nlme_3.1-149           jsonlite_1.7.2        
+[148] carData_3.0-4          desc_1.3.0             fansi_0.5.0           
+[151] pillar_1.6.3           lattice_0.20-41        ggrastr_1.0.1         
+[154] fastmap_1.1.0          httr_1.4.2             pkgbuild_1.1.0        
+[157] GO.db_3.12.1           glue_1.4.2             remotes_2.2.0         
+[160] zip_2.2.0              png_0.1-7              iterators_1.0.13      
+[163] Rgraphviz_2.34.0       bit_4.0.4              stringi_1.7.5         
+[166] blob_1.2.2             textshaping_0.2.1      memoise_2.0.0         
+[169] irlba_2.3.3            ape_5.5               </code></pre>
+</div>
+</div>
+
+
+<!-- Adjust MathJax settings so that all math formulae are shown using
+TeX fonts only; see
+http://docs.mathjax.org/en/latest/configuration.html.  This will make
+the presentation more consistent at the cost of the webpage sometimes
+taking slightly longer to load. Note that this only works because the
+footer is added to webpages before the MathJax javascript. -->
+<script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    "HTML-CSS": { availableFonts: ["TeX"] }
+  });
+</script>
+
+
+</div>
+</div>
+
+</div>
+
+<script>
+
+// add bootstrap table styles to pandoc tables
+function bootstrapStylePandocTables() {
+  $('tr.odd').parent('tbody').parent('table').addClass('table table-condensed');
+}
+$(document).ready(function () {
+  bootstrapStylePandocTables();
+});
+
+
+</script>
+
+<!-- tabsets -->
+
+<script>
+$(document).ready(function () {
+  window.buildTabsets("TOC");
+});
+
+$(document).ready(function () {
+  $('.tabset-dropdown > .nav-tabs > li').click(function () {
+    $(this).parent().toggleClass('nav-tabs-open');
+  });
+});
+</script>
+
+<!-- code folding -->
+
+<script>
+$(document).ready(function ()  {
+
+    // temporarily add toc-ignore selector to headers for the consistency with Pandoc
+    $('.unlisted.unnumbered').addClass('toc-ignore')
+
+    // move toc-ignore selectors from section div to header
+    $('div.section.toc-ignore')
+        .removeClass('toc-ignore')
+        .children('h1,h2,h3,h4,h5').addClass('toc-ignore');
+
+    // establish options
+    var options = {
+      selectors: "h1,h2,h3",
+      theme: "bootstrap3",
+      context: '.toc-content',
+      hashGenerator: function (text) {
+        return text.replace(/[.\\/?&!#<>]/g, '').replace(/\s/g, '_');
+      },
+      ignoreSelector: ".toc-ignore",
+      scrollTo: 0
+    };
+    options.showAndHide = true;
+    options.smoothScroll = true;
+
+    // tocify
+    var toc = $("#TOC").tocify(options).data("toc-tocify");
+});
+</script>
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>
