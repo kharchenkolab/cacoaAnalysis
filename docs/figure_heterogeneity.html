@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+
+<meta name="author" content="Viktor Petukhov" />
+
+<meta name="date" content="2022-01-07" />
+
+<title>Analysis of sample heterogeneity</title>
+
+<script src="site_libs/jquery-3.6.0/jquery-3.6.0.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link href="site_libs/bootstrap-3.3.5/css/cosmo.min.css" rel="stylesheet" />
+<script src="site_libs/bootstrap-3.3.5/js/bootstrap.min.js"></script>
+<script src="site_libs/bootstrap-3.3.5/shim/html5shiv.min.js"></script>
+<script src="site_libs/bootstrap-3.3.5/shim/respond.min.js"></script>
+<style>h1 {font-size: 34px;}
+       h1.title {font-size: 38px;}
+       h2 {font-size: 30px;}
+       h3 {font-size: 24px;}
+       h4 {font-size: 18px;}
+       h5 {font-size: 16px;}
+       h6 {font-size: 12px;}
+       code {color: inherit; background-color: rgba(0, 0, 0, 0.04);}
+       pre:not([class]) { background-color: white }</style>
+<script src="site_libs/jqueryui-1.11.4/jquery-ui.min.js"></script>
+<link href="site_libs/tocify-1.9.1/jquery.tocify.css" rel="stylesheet" />
+<script src="site_libs/tocify-1.9.1/jquery.tocify.js"></script>
+<script src="site_libs/navigation-1.1/tabsets.js"></script>
+<link href="site_libs/highlightjs-9.12.0/textmate.css" rel="stylesheet" />
+<script src="site_libs/highlightjs-9.12.0/highlight.js"></script>
+
+<link rel="icon" href="https://github.com/workflowr/workflowr-assets/raw/master/img/reproducible.png">
+<!-- Add a small amount of space between sections. -->
+<style type="text/css">
+div.section {
+  padding-top: 12px;
+}
+</style>
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+<style type="text/css">code{white-space: pre;}</style>
+<script type="text/javascript">
+if (window.hljs) {
+  hljs.configure({languages: []});
+  hljs.initHighlightingOnLoad();
+  if (document.readyState && document.readyState === "complete") {
+    window.setTimeout(function() { hljs.initHighlighting(); }, 0);
+  }
+}
+</script>
+
+
+
+
+
+
+
+
+<style type = "text/css">
+.main-container {
+  max-width: 940px;
+  margin-left: auto;
+  margin-right: auto;
+}
+img {
+  max-width:100%;
+}
+.tabbed-pane {
+  padding-top: 12px;
+}
+.html-widget {
+  margin-bottom: 20px;
+}
+button.code-folding-btn:focus {
+  outline: none;
+}
+summary {
+  display: list-item;
+}
+pre code {
+  padding: 0;
+}
+</style>
+
+
+<style type="text/css">
+.dropdown-submenu {
+  position: relative;
+}
+.dropdown-submenu>.dropdown-menu {
+  top: 0;
+  left: 100%;
+  margin-top: -6px;
+  margin-left: -1px;
+  border-radius: 0 6px 6px 6px;
+}
+.dropdown-submenu:hover>.dropdown-menu {
+  display: block;
+}
+.dropdown-submenu>a:after {
+  display: block;
+  content: " ";
+  float: right;
+  width: 0;
+  height: 0;
+  border-color: transparent;
+  border-style: solid;
+  border-width: 5px 0 5px 5px;
+  border-left-color: #cccccc;
+  margin-top: 5px;
+  margin-right: -10px;
+}
+.dropdown-submenu:hover>a:after {
+  border-left-color: #adb5bd;
+}
+.dropdown-submenu.pull-left {
+  float: none;
+}
+.dropdown-submenu.pull-left>.dropdown-menu {
+  left: -100%;
+  margin-left: 10px;
+  border-radius: 6px 0 6px 6px;
+}
+</style>
+
+<script type="text/javascript">
+// manage active state of menu based on current page
+$(document).ready(function () {
+  // active menu anchor
+  href = window.location.pathname
+  href = href.substr(href.lastIndexOf('/') + 1)
+  if (href === "")
+    href = "index.html";
+  var menuAnchor = $('a[href="' + href + '"]');
+
+  // mark it active
+  menuAnchor.tab('show');
+
+  // if it's got a parent navbar menu mark it active as well
+  menuAnchor.closest('li.dropdown').addClass('active');
+
+  // Navbar adjustments
+  var navHeight = $(".navbar").first().height() + 15;
+  var style = document.createElement('style');
+  var pt = "padding-top: " + navHeight + "px; ";
+  var mt = "margin-top: -" + navHeight + "px; ";
+  var css = "";
+  // offset scroll position for anchor links (for fixed navbar)
+  for (var i = 1; i <= 6; i++) {
+    css += ".section h" + i + "{ " + pt + mt + "}\n";
+  }
+  style.innerHTML = "body {" + pt + "padding-bottom: 40px; }\n" + css;
+  document.head.appendChild(style);
+});
+</script>
+
+<!-- tabsets -->
+
+<style type="text/css">
+.tabset-dropdown > .nav-tabs {
+  display: inline-table;
+  max-height: 500px;
+  min-height: 44px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.tabset-dropdown > .nav-tabs > li.active:before {
+  content: "";
+  font-family: 'Glyphicons Halflings';
+  display: inline-block;
+  padding: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li.active:before {
+  content: "&#xe258;";
+  border: none;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open:before {
+  content: "";
+  font-family: 'Glyphicons Halflings';
+  display: inline-block;
+  padding: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs > li.active {
+  display: block;
+}
+
+.tabset-dropdown > .nav-tabs > li > a,
+.tabset-dropdown > .nav-tabs > li > a:focus,
+.tabset-dropdown > .nav-tabs > li > a:hover {
+  border: none;
+  display: inline-block;
+  border-radius: 4px;
+  background-color: transparent;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li {
+  display: block;
+  float: none;
+}
+
+.tabset-dropdown > .nav-tabs > li {
+  display: none;
+}
+</style>
+
+<!-- code folding -->
+
+
+
+<style type="text/css">
+
+#TOC {
+  margin: 25px 0px 20px 0px;
+}
+@media (max-width: 768px) {
+#TOC {
+  position: relative;
+  width: 100%;
+}
+}
+
+@media print {
+.toc-content {
+  /* see https://github.com/w3c/csswg-drafts/issues/4434 */
+  float: right;
+}
+}
+
+.toc-content {
+  padding-left: 30px;
+  padding-right: 40px;
+}
+
+div.main-container {
+  max-width: 1200px;
+}
+
+div.tocify {
+  width: 20%;
+  max-width: 260px;
+  max-height: 85%;
+}
+
+@media (min-width: 768px) and (max-width: 991px) {
+  div.tocify {
+    width: 25%;
+  }
+}
+
+@media (max-width: 767px) {
+  div.tocify {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+.tocify ul, .tocify li {
+  line-height: 20px;
+}
+
+.tocify-subheader .tocify-item {
+  font-size: 0.90em;
+}
+
+.tocify .list-group-item {
+  border-radius: 0px;
+}
+
+
+</style>
+
+
+
+</head>
+
+<body>
+
+
+<div class="container-fluid main-container">
+
+
+<!-- setup 3col/9col grid for toc_float and main content  -->
+<div class="row">
+<div class="col-xs-12 col-sm-4 col-md-3">
+<div id="TOC" class="tocify">
+</div>
+</div>
+
+<div class="toc-content col-xs-12 col-sm-8 col-md-9">
+
+
+
+
+<div class="navbar navbar-default  navbar-fixed-top" role="navigation">
+  <div class="container">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar">
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="index.html">cacoaAnalysis</a>
+    </div>
+    <div id="navbar" class="navbar-collapse collapse">
+      <ul class="nav navbar-nav">
+        <li>
+  <a href="index.html">Home</a>
+</li>
+<li>
+  <a href="about.html">About</a>
+</li>
+<li>
+  <a href="license.html">License</a>
+</li>
+      </ul>
+      <ul class="nav navbar-nav navbar-right">
+        
+      </ul>
+    </div><!--/.nav-collapse -->
+  </div><!--/.container -->
+</div><!--/.navbar -->
+
+<div id="header">
+
+
+
+<h1 class="title toc-ignore">Analysis of sample heterogeneity</h1>
+<h4 class="author"><a href="https://github.com/VPetukhov/">Viktor Petukhov</a></h4>
+<h4 class="date">2022-01-07</h4>
+
+</div>
+
+
+<p>
+<button type="button" class="btn btn-default btn-workflowr btn-workflowr-report" data-toggle="collapse" data-target="#workflowr-report">
+<span class="glyphicon glyphicon-list" aria-hidden="true"></span> workflowr <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span>
+</button>
+</p>
+<div id="workflowr-report" class="collapse">
+<ul class="nav nav-tabs">
+<li class="active">
+<a data-toggle="tab" href="#summary">Summary</a>
+</li>
+<li>
+<a data-toggle="tab" href="#checks"> Checks <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> </a>
+</li>
+<li>
+<a data-toggle="tab" href="#versions">Past versions</a>
+</li>
+</ul>
+<div class="tab-content">
+<div id="summary" class="tab-pane fade in active">
+<p>
+<strong>Last updated:</strong> 2022-01-07
+</p>
+<p>
+<strong>Checks:</strong> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> 7 <span class="glyphicon glyphicon-exclamation-sign text-danger" aria-hidden="true"></span> 0
+</p>
+<p>
+<strong>Knit directory:</strong> <code>cacoaAnalysis/</code> <span class="glyphicon glyphicon-question-sign" aria-hidden="true" title="This is the local directory in which the code in this file was executed."> </span>
+</p>
+<p>
+This reproducible <a href="http://rmarkdown.rstudio.com">R Markdown</a> analysis was created with <a
+  href="https://github.com/jdblischak/workflowr">workflowr</a> (version 1.6.2). The <em>Checks</em> tab describes the reproducibility checks that were applied when the results were created. The <em>Past versions</em> tab lists the development history.
+</p>
+<hr>
+</div>
+<div id="checks" class="tab-pane fade">
+<div id="workflowr-checks" class="panel-group">
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongRMarkdownfilestronguptodate"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>R Markdown file:</strong> up-to-date </a>
+</p>
+</div>
+<div id="strongRMarkdownfilestronguptodate" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great! Since the R Markdown file has been committed to the Git repository, you know the exact version of the code that produced these results.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongEnvironmentstrongempty"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Environment:</strong> empty </a>
+</p>
+</div>
+<div id="strongEnvironmentstrongempty" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! The global environment was empty. Objects defined in the global environment can affect the analysis in your R Markdown file in unknown ways. For reproduciblity it's best to always run the code in an empty environment.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongSeedstrongcodesetseed20211123code"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Seed:</strong> <code>set.seed(20211123)</code> </a>
+</p>
+</div>
+<div id="strongSeedstrongcodesetseed20211123code" class="panel-collapse collapse">
+<div class="panel-body">
+<p>The command <code>set.seed(20211123)</code> was run prior to running the code in the R Markdown file. Setting a seed ensures that any results that rely on randomness, e.g. subsampling or permutations, are reproducible.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongSessioninformationstrongrecorded"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Session information:</strong> recorded </a>
+</p>
+</div>
+<div id="strongSessioninformationstrongrecorded" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! Recording the operating system, R version, and package versions is critical for reproducibility.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongCachestrongnone"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Cache:</strong> none </a>
+</p>
+</div>
+<div id="strongCachestrongnone" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Nice! There were no cached chunks for this analysis, so you can be confident that you successfully produced the results during this run.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongFilepathsstrongrelative"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>File paths:</strong> relative </a>
+</p>
+</div>
+<div id="strongFilepathsstrongrelative" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! Using relative paths to the files within your workflowr project makes it easier to run your code on other machines.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongRepositoryversionstrongahrefhttpsgithubcomkharchenkolabcacoaAnalysistree9290d009791fdb195a86885e5e75da9a1d3963bdtargetblank9290d00a"> <span class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> <strong>Repository version:</strong> <a href="https://github.com/kharchenkolab/cacoaAnalysis/tree/9290d009791fdb195a86885e5e75da9a1d3963bd" target="_blank">9290d00</a> </a>
+</p>
+</div>
+<div id="strongRepositoryversionstrongahrefhttpsgithubcomkharchenkolabcacoaAnalysistree9290d009791fdb195a86885e5e75da9a1d3963bdtargetblank9290d00a" class="panel-collapse collapse">
+<div class="panel-body">
+<p>
+Great! You are using Git for version control. Tracking code development and connecting the code version to the results is critical for reproducibility.
+</p>
+<p>
+The results in this page were generated with repository version <a href="https://github.com/kharchenkolab/cacoaAnalysis/tree/9290d009791fdb195a86885e5e75da9a1d3963bd" target="_blank">9290d00</a>. See the <em>Past versions</em> tab to see a history of the changes made to the R Markdown and HTML files.
+</p>
+<p>
+Note that you need to be careful to ensure that all relevant files for the analysis have been committed to Git prior to generating the results (you can use <code>wflow_publish</code> or <code>wflow_git_commit</code>). workflowr only checks the R Markdown file, but you know if there are other scripts or data files that it depends on. Below is the status of the Git repository when the results were generated:
+</p>
+<pre><code>
+Ignored files:
+    Ignored:    .Rhistory
+    Ignored:    .Rproj.user/
+    Ignored:    analysis/.Rhistory
+    Ignored:    analysis/figure_cluster_based_de_bio.nb.html
+    Ignored:    analysis/figure_cluster_free_expression.nb.html
+    Ignored:    analysis/figure_compositional.nb.html
+    Ignored:    analysis/figure_compositional_cf.nb.html
+    Ignored:    analysis/figure_expression_shifts.nb.html
+    Ignored:    analysis/figure_heterogeneity.nb.html
+    Ignored:    analysis/figure_interpretation.nb.html
+    Ignored:    analysis/prepare_cacoa_results.nb.html
+    Ignored:    analysis/preprocess.nb.html
+    Ignored:    analysis/report_asd.nb.html
+    Ignored:    analysis/report_az.nb.html
+    Ignored:    analysis/report_ep.nb.html
+    Ignored:    analysis/report_ms.nb.html
+    Ignored:    analysis/report_pf.nb.html
+    Ignored:    analysis/report_scc.nb.html
+    Ignored:    analysis/simulation_distances.nb.html
+    Ignored:    analysis/simulation_variance.nb.html
+    Ignored:    cache/
+    Ignored:    data/ASD/
+    Ignored:    data/AZ/
+    Ignored:    data/EP/
+    Ignored:    data/MS/
+    Ignored:    data/PF/
+    Ignored:    data/SCC/
+    Ignored:    man/
+    Ignored:    output/figures/
+
+Unstaged changes:
+    Modified:   analysis/figure_interpretation.Rmd
+
+</code></pre>
+<p>
+Note that any generated files, e.g. HTML, png, CSS, etc., are not included in this status report because it is ok for generated content to have uncommitted changes.
+</p>
+</div>
+</div>
+</div>
+</div>
+<hr>
+</div>
+<div id="versions" class="tab-pane fade">
+
+<p>
+These are the previous versions of the repository in which changes were made to the R Markdown (<code>analysis/figure_heterogeneity.Rmd</code>) and HTML (<code>docs/figure_heterogeneity.html</code>) files. If you've configured a remote Git repository (see <code>?wflow_git_remote</code>), click on the hyperlinks in the table below to view the files as they were in that past version.
+</p>
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+File
+</th>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+<th>
+Message
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Rmd
+</td>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/9290d009791fdb195a86885e5e75da9a1d3963bd/analysis/figure_heterogeneity.Rmd" target="_blank">9290d00</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2022-01-07
+</td>
+<td>
+Updated the heterogeneity figures
+</td>
+</tr>
+<tr>
+<td>
+Rmd
+</td>
+<td>
+<a href="https://github.com/kharchenkolab/cacoaAnalysis/blob/e1f1ad9f8fe2766158b390e6e9f231476c924880/analysis/figure_heterogeneity.Rmd" target="_blank">e1f1ad9</a>
+</td>
+<td>
+viktor_petukhov
+</td>
+<td>
+2021-12-15
+</td>
+<td>
+Sample heterogeneity figure
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<hr>
+</div>
+</div>
+</div>
+<pre class="r"><code>caos &lt;- c(&quot;ASD&quot;, &quot;AZ&quot;, &quot;EP&quot;, &quot;MS&quot;, &quot;PF&quot;) %&gt;% sn() %&gt;% plapply(function(dn) {
+  cao &lt;- read_rds(DataPath(dn, &quot;cao.rds&quot;)) %&gt;% Cacoa$new()
+  cao$sample.groups.palette %&lt;&gt;% .[levels(cao$sample.groups)]
+  cao
+}, n.cores=5, progress=TRUE, mc.preschedule=TRUE)</code></pre>
+<div id="main-figure" class="section level2">
+<h2>Main figure</h2>
+<div id="ms-l2-3-disease-stage" class="section level3">
+<h3>MS L2-3 disease stage</h3>
+<pre class="r"><code>m_size &lt;- 3
+gg_ms_stage &lt;- caos$MS$plotSampleDistances(
+  sample.colors=caos$MS$data.object$misc$sample_metadata$stage, show.sample.size=FALSE, 
+  cell.type=&quot;EN-L2-3&quot;, color.title=&quot;Stage&quot;, size=m_size
+) + 
+  theme(plot.title=element_blank(), legend.key=element_rect(fill=&quot;transparent&quot;)) + 
+  theme_emb + theme_legend_position(c(1, 0)) +
+  guides(shape=guide_none())
+
+gg_ms_stage</code></pre>
+<p><img src="figure/figure_heterogeneity.Rmd/unnamed-chunk-2-1.png" width="288" style="display: block; margin: auto;" /></p>
+</div>
+<div id="pf-metadata-testing" class="section level3">
+<h3>PF metadata testing</h3>
+<pre class="r"><code>sample_meta_pf &lt;- read_csv(DataPath(&quot;PF/sample_metadata.csv&quot;)) %&gt;% head(-2) %&gt;% 
+  .[,2:10] %&gt;% unique() %&gt;% mutate(
+    Gender=replace(Gender, Gender == &quot;Unknown&quot;, NA),
+    Ethnicity=replace(Ethnicity, Ethnicity == &quot;Unknown&quot;, NA),
+    Tobacco=replace(Tobacco, Tobacco == &quot;Unknown&quot;, NA),
+    Age=as.integer(Age),
+    Ethnicity=sapply(strsplit(Ethnicity, &quot; &quot;), `[[`, 1)
+  ) %&gt;% arrange(Sample_Name) %&gt;% head(-1) %&gt;% 
+  as.data.frame() %&gt;% set_rownames(.$Sample_Name) %&gt;%
+  lapply(setNames, .$Sample_Name)
+
+caos$PF$data.object$misc$sample_metadata &lt;- sample_meta_pf</code></pre>
+<pre class="r"><code>smd &lt;- as.data.frame(sample_meta_pf) %&gt;% dplyr::select(-Sample_Name)
+sep_res &lt;- caos$PF$estimateMetadataSeparation(smd, space=&quot;expression.shifts&quot;, dist=&quot;l1&quot;, 
+                                              show.warning=FALSE, n.permutations=20000)
+
+gg_pf_meta &lt;- sep_res$padjust %&gt;% {tibble(Type=names(.), value=.)} %&gt;%
+  cacoa:::plotMeanMedValuesPerCellType(type=&quot;bar&quot;, yline=0.05, ylab=&quot;Separation p-value&quot;) +
+  scale_y_continuous(expand=c(0, 0, 0.05, 0), trans=ggforce::trans_reverser(&#39;log10&#39;)) + 
+  scale_fill_manual(values=rep(&quot;#2b8cbe&quot;, length(sample_meta_pf))) +
+  theme(axis.title.x=element_blank())
+
+gg_pf_meta</code></pre>
+<p><img src="figure/figure_heterogeneity.Rmd/unnamed-chunk-4-1.png" width="384" style="display: block; margin: auto;" /></p>
+</div>
+<div id="pf-split-by-processing-site" class="section level3">
+<h3>PF, split by processing site</h3>
+<pre class="r"><code>df_melt &lt;- caos$PF$.__enclos_env__$private$extractCodaData(cell.groups=caos$PF$cell.groups, ret.groups=FALSE) %&gt;%
+  {100 * . / rowSums(.)} %&gt;% as.data.frame() %&gt;%
+  mutate(group=caos$PF$sample.groups[rownames(.)], sample=rownames(.)) %&gt;%
+  reshape2::melt(id.vars=c(&quot;group&quot;, &quot;sample&quot;)) %&gt;%
+  mutate(group=paste0(group, &quot;, &quot;, sample_meta_pf$Processing_site[as.character(sample)]))
+
+p_palette &lt;- c(&quot;Control, TGen&quot;=&quot;#a6cee3&quot;, &quot;Control, Vanderbilt&quot;=&quot;#33a02c&quot;, 
+               &quot;IPF, TGen&quot;=&quot;#e41a1c&quot;, &quot;IPF, Vanderbilt&quot;=&quot;#984ea3&quot;)
+
+p_types &lt;- c(&quot;Fibroblasts&quot;, &quot;MUC5B+&quot;, &quot;Myofibroblasts&quot;)
+gg_pf_fracs &lt;- filter(df_melt, (variable %in% p_types)) %&gt;% 
+  mutate(variable=factor(variable, levels=p_types)) %&gt;% 
+  cacoa:::plotCountBoxplotsPerType(plot.theme=caos$PFpf$plot.theme, jitter.width=0.05, alpha=1, size=0.5) +
+    scale_y_continuous(limits=c(0, 3.75), expand=c(0, 0), name=&quot;Cell fraction, %&quot;) + 
+    scale_x_discrete(expand=c(0, 0.002, 0, 0)) +
+    scale_fill_manual(values=p_palette) +
+    theme_legend_position(c(0.01, 1.05)) +
+    theme(legend.margin=margin(),
+          axis.text.x=element_text(angle=0, hjust=0.5), axis.title.x=element_blank(),
+          panel.grid.major.x=element_blank(), legend.background=element_blank(),
+          legend.key=element_rect(fill=&quot;transparent&quot;))
+
+gg_pf_fracs</code></pre>
+<p><img src="figure/figure_heterogeneity.Rmd/unnamed-chunk-5-1.png" width="288" style="display: block; margin: auto;" /></p>
+</div>
+<div id="covariate-plots" class="section level3">
+<h3>Covariate plots</h3>
+<pre class="r"><code>covar_names &lt;- list(
+  ASD=c(&#39;region_hr&#39;, &#39;Region&#39;), AZ=c(&#39;batch&#39;, &#39;Batch&#39;), EP=c(&#39;Protocol&#39;, &#39;Protocol&#39;),
+  MS=c(&#39;Seqbatch&#39;, &#39;Seqbatch&#39;), PF=c(&#39;Processing_site&#39;, &#39;Processing site&#39;)
+)</code></pre>
+<pre class="r"><code>covar_pvals &lt;- names(covar_names) %&gt;% sn() %&gt;% sapply(function(cn) {
+  smd &lt;- caos[[cn]]$data.object$misc$sample_meta %&gt;% as.data.frame()
+  caos[[cn]]$estimateMetadataSeparation(smd, space=&quot;expression.shifts&quot;, dist=&quot;l1&quot;, show.warning=FALSE)
+  unname(caos[[cn]]$test.results$metadata.separation$padjust[covar_names[[cn]][1]])
+})
+
+ggs_covar &lt;- names(covar_names) %&gt;% sn() %&gt;% lapply(function(cn) {
+  ci &lt;- covar_names[[cn]]
+  smd &lt;- caos[[cn]]$data.object$misc$sample_meta
+  gg &lt;- caos[[cn]]$plotSampleDistances(
+    sample.colors=smd[[ci[1]]], show.sample.size=FALSE, color.title=ci[2], size=m_size
+  )
+
+  lab.df &lt;- gg$data %&gt;% group_by(color) %&gt;% summarize(x=mean(x), y=mean(y))
+
+  gg +
+    # ggrepel::geom_label_repel(aes(x=x, y=y, shape=NULL, label=color), data=lab.df, 
+    #                           fill=alpha(&quot;white&quot;, 0.5), label.size=0.1, size=3) +
+    theme_emb + theme_legend_position(c(0.03, 0.03)) +
+    theme(legend.background=element_rect(fill=alpha(&quot;white&quot;, 0.7))) +
+    # guides(shape=guide_legend(order=1, title=&quot;Condition&quot;, ncol=2), color=guide_legend(ncol=2)) +
+    guides(shape=guide_none(), color=guide_legend(ncol=2)) +
+    theme(panel.grid.major=element_line(size=0.3)) +
+    scale_color_brewer(palette=&quot;Dark2&quot;)
+})
+
+plot_grid(plotlist=ggs_covar, labels=paste0(&quot;p=&quot;, signif(covar_pvals, 2)), nrow=1,
+          label_fontface=&quot;oblique&quot;, hjust=0, label_x=0.1)</code></pre>
+<p><img src="figure/figure_heterogeneity.Rmd/unnamed-chunk-7-1.png" width="960" style="display: block; margin: auto;" /></p>
+</div>
+<div id="compile-figure" class="section level3">
+<h3>Compile figure</h3>
+<pre class="r"><code>theme_ax &lt;- theme(axis.text.x=element_text(size=9), axis.text.y=element_text(size=8))
+leg_theme &lt;- theme(
+  legend.title=element_text(size=9), legend.text=element_text(size=8), 
+  legend.background=element_blank(), legend.key=element_rect(fill=&quot;transparent&quot;)
+)
+ggs_covar %&lt;&gt;% lapply(`+`, leg_theme)
+p_ggs_covar &lt;- c(ggs_covar[4], ggs_covar[-4])
+
+p_ggs_covar$AZ %&lt;&gt;% {. + theme_legend_position(c(1, 0))}
+p_ggs_covar[c(&quot;PF&quot;, &quot;EP&quot;)] %&lt;&gt;% lapply(`+`, guides(color=guide_legend(direction=&quot;vertical&quot;)))
+
+p_labs &lt;- names(p_ggs_covar) %&gt;% paste0(., &quot;, p=&quot;, signif(covar_pvals, 2)[.]) %&gt;% 
+  setNames(names(p_ggs_covar)) %&gt;% {c(&quot;&quot;, .[c(&quot;ASD&quot;, &quot;EP&quot;)], &quot;&quot;, .[c(&quot;MS&quot;, &quot;AZ&quot;, &quot;PF&quot;)])}
+
+plot_grid(
+  plotlist=c(
+    list(gg_ms_stage + leg_theme),
+    p_ggs_covar,
+    list(gg_pf_fracs + theme_ax + theme(legend.key.height=unit(12, &quot;pt&quot;), 
+                                        axis.text.x=element_text(size=unit(8, &quot;pt&quot;)))),
+    list(gg_pf_meta + theme_ax + theme(axis.title.y=element_text(hjust=1)))
+  ),
+  nrow=2, byrow=FALSE, labels=p_labs, scale=0.95, 
+  label_fontface=&quot;oblique&quot;, hjust=0, label_x=0.07, label_y=0.99, label_size=12,
+  rel_widths=c(1, 1, 1, 1.2)
+)</code></pre>
+<p><img src="figure/figure_heterogeneity.Rmd/unnamed-chunk-8-1.png" width="816" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>ggsave(figurePath(&quot;4_heterogeneity.pdf&quot;))</code></pre>
+</div>
+</div>
+<div id="supp.-figure" class="section level2">
+<h2>Supp. figure</h2>
+<div id="pf-compositional" class="section level3">
+<h3>PF compositional</h3>
+<pre class="r"><code>biased_samples &lt;- sample_meta_pf$Processing_site %&gt;% {names(.)[. != &quot;TGen&quot;]}
+caos$PF$estimateCellLoadings(samples.to.remove=biased_samples, name=&quot;coda.subs&quot;)
+gg_pf_comp_s &lt;- caos$PF$plotCellLoadings(show.pvals=FALSE, alpha=0.01, name=&quot;coda.subs&quot;,
+                                         annotation.x=0.66) +
+  scale_x_continuous(limits=c(-1, 1) * 0.66, expand=c(0, 0))
+
+gg_pf_comp_s</code></pre>
+<p><img src="figure/figure_heterogeneity.Rmd/unnamed-chunk-9-1.png" width="480" style="display: block; margin: auto;" /></p>
+</div>
+<div id="od" class="section level3">
+<h3>OD</h3>
+<pre class="r"><code>plotMSCovariates &lt;- function(plot.df, metadata) {
+  plot.df %&lt;&gt;% mutate(Batch=metadata$Seqbatch[sample], Sex=metadata$sex[sample])
+
+  ggplot(plot.df) + 
+    geom_point(aes(x=x, y=y, fill=Batch, shape=Sex, color=condition), size=5) +
+    scale_shape_manual(values=c(21, 24)) +
+    scale_color_manual(values=c(&quot;black&quot;, &quot;gray90&quot;)) +
+    guides(fill=guide_legend(override.aes=list(shape=21)),
+           color=guide_legend(override.aes=list(shape=21))) +
+    theme_emb
+    
+}
+
+sample_meta_ms &lt;- caos$MS$data.object$misc$sample_metadata
+sample_meta_ms$sex %&lt;&gt;% {ifelse(. == &quot;female&quot;, &quot;F&quot;, &quot;M&quot;)}</code></pre>
+<div id="top-100" class="section level4">
+<h4>Top-100</h4>
+<pre class="r"><code>caos$MS$estimateExpressionShiftMagnitudes(
+  verbose=FALSE, top.n.genes=100, min.samp.per.type=4, gene.selection=&quot;od&quot;, name=&#39;es.od.100&#39;
+)</code></pre>
+<pre class="r"><code>gg_es_100 &lt;- caos$MS$plotExpressionShiftMagnitudes(ylab=&quot;expression distance&quot;, name=&#39;es.od.100&#39;)
+gg_mds_100 &lt;- caos$MS$plotSampleDistances(show.sample.size=FALSE, name=&#39;es.od.100&#39;)$data %&gt;% 
+  plotMSCovariates(metadata=sample_meta_ms)
+
+plot_grid(gg_es_100, gg_mds_100, align=&quot;vh&quot;, axis=&quot;tb&quot;, rel_widths=c(1, 0.7))</code></pre>
+<p><img src="figure/figure_heterogeneity.Rmd/unnamed-chunk-12-1.png" width="864" style="display: block; margin: auto;" /></p>
+</div>
+<div id="top-500" class="section level4">
+<h4>Top-500</h4>
+<pre class="r"><code>caos$MS$estimateExpressionShiftMagnitudes(
+  verbose=FALSE, top.n.genes=500, name=&#39;es.od.500&#39;, min.samp.per.type=4, gene.selection=&quot;od&quot;
+)</code></pre>
+<pre class="r"><code>gg1 &lt;- caos$MS$plotExpressionShiftMagnitudes(ylab=&quot;expression distance&quot;, name=&#39;es.od.500&#39;)
+gg2 &lt;- caos$MS$plotSampleDistances(show.sample.size=FALSE, name=&#39;es.od.500&#39;)$data %&gt;% 
+  plotMSCovariates(metadata=sample_meta_ms)
+
+plot_grid(gg1, gg2, align=&quot;vh&quot;, axis=&quot;tb&quot;, rel_widths=c(1, 0.7))</code></pre>
+<p><img src="figure/figure_heterogeneity.Rmd/unnamed-chunk-14-1.png" width="864" style="display: block; margin: auto;" /></p>
+</div>
+<div id="run-scitd" class="section level4">
+<h4>Run scITD</h4>
+<pre class="r"><code>library(scITD)
+
+cm_joint &lt;- caos$MS$getJointCountMatrix() %&gt;% t()
+
+cell_meta &lt;- caos$MS$data.object$misc$cell_metadata %&gt;% as.data.frame() %$% 
+  set_rownames(.[,c(5:14, 21)], cell) %&gt;% 
+  rename(donors=sample, ctypes=cellType) %&gt;% 
+  mutate(donors=as.factor(donors), ctypes=as.factor(ctypes))
+
+# scITD filters samples severely if some cell types miss them. So, we focus only on
+# highly represented cell types.
+used_types &lt;- c(&quot;Astrocytes&quot;, &quot;EN-L2-3&quot;, &quot;EN-L4&quot;, &quot;EN-L5-6&quot;, &quot;IN-PV&quot;, &quot;IN-SST&quot;, 
+                &quot;IN-SV2C&quot;, &quot;IN-VIP&quot;, &quot;OL&quot;, &quot;OPC&quot;)</code></pre>
+<pre class="r"><code>param_list &lt;- initialize_params(ctypes_use=used_types, ncores=30, rand_seed=10)
+
+container &lt;- make_new_container(
+  params=param_list,
+  count_data=cm_joint[,rownames(cell_meta)], 
+  meta_data=cell_meta
+)
+
+container %&lt;&gt;% form_tensor(
+  donor_min_cells=5, norm_method=&#39;trim&#39;, scale_factor=10000, vargenes_method=&#39;norm_var_pvals&#39;, 
+  vargenes_thresh=.5, scale_var=TRUE, var_scale_power=2
+)
+
+print(length(container[[&quot;all_vargenes&quot;]]))</code></pre>
+<pre><code>[1] 2746</code></pre>
+<pre class="r"><code>ranks &lt;- c(5, 6)
+container %&lt;&gt;% run_tucker_ica(ranks=ranks, tucker_type=&#39;regular&#39;, rotation_type=&#39;hybrid&#39;)
+
+test_vars &lt;- c(&#39;sex&#39;, &#39;diagnosis&#39;, &#39;region&#39;, &#39;Capbatch&#39;, &#39;Seqbatch&#39;, &#39;PMI&#39;)
+container %&lt;&gt;% get_meta_associations(vars_test=test_vars, stat_use=&#39;pval&#39;)
+
+container %&lt;&gt;% plot_donor_matrix(meta_vars=test_vars, show_donor_ids = TRUE,
+                                 add_meta_associations=&#39;pval&#39;)
+
+container$plots$donor_matrix</code></pre>
+<p><img src="figure/figure_heterogeneity.Rmd/unnamed-chunk-17-1.png" width="960" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>sex_related_scores &lt;- get_one_factor(container, factor_select=4)[[2]] %&gt;% rowMeans() %&gt;% abs() %&gt;%
+  sort(decreasing=TRUE)
+
+batch_related_scores &lt;- lapply(c(2, 5), function(fi) {
+  get_one_factor(container, factor_select=fi)[[2]] %&gt;% abs() %&gt;% 
+    {setNames(matrixStats::rowMedians(.), rownames(.))} %&gt;% 
+    sort(decreasing=TRUE)
+})</code></pre>
+</div>
+<div id="remove-sex-related-genes" class="section level4">
+<h4>Remove sex-related genes</h4>
+<pre class="r"><code>sr_genes &lt;- names(sex_related_scores)[1:30]
+caos$MS$estimateExpressionShiftMagnitudes(
+  verbose=FALSE, top.n.genes=500, n.permutations=5000, min.samp.per.type=4, gene.selection=&quot;od&quot;,
+  exclude.genes=sr_genes, name=&#39;es.od.500.sex&#39;
+)</code></pre>
+<pre class="r"><code>gg_es_500_sex &lt;- caos$MS$plotExpressionShiftMagnitudes(
+  ylab=&quot;expression distance&quot;, y.max=0.59, name=&#39;es.od.500.sex&#39;
+)
+gg_mds_500_sex &lt;- caos$MS$plotSampleDistances(show.sample.size=FALSE, name=&#39;es.od.500.sex&#39;)$data %&gt;% 
+  plotMSCovariates(metadata=sample_meta_ms)
+
+plot_grid(gg_es_500_sex, gg_mds_500_sex, align=&quot;vh&quot;, axis=&quot;tb&quot;, rel_widths=c(1, 0.85))</code></pre>
+<p><img src="figure/figure_heterogeneity.Rmd/unnamed-chunk-20-1.png" width="720" style="display: block; margin: auto;" /></p>
+</div>
+<div id="remove-batch-related-genes" class="section level4">
+<h4>Remove batch-related genes</h4>
+<pre class="r"><code>br_genes &lt;- lapply(batch_related_scores, function(v) names(v)[v &gt; 7]) %&gt;% 
+  do.call(union, .)
+
+caos$MS$estimateExpressionShiftMagnitudes(
+  verbose=FALSE, top.n.genes=500, n.permutations=5000, min.samp.per.type=4, gene.selection=&quot;od&quot;,
+  exclude.genes=union(sr_genes, br_genes), name=&#39;es.od.500.sex.batch&#39;
+)</code></pre>
+<pre class="r"><code>gg_es_500_batch &lt;- caos$MS$plotExpressionShiftMagnitudes(
+  ylab=&quot;expression distance&quot;, y.max=0.6, name=&#39;es.od.500.sex.batch&#39;
+)
+
+gg_mds_500_batch &lt;- caos$MS$plotSampleDistances(
+  show.sample.size=FALSE, name=&#39;es.od.500.sex.batch&#39;
+)$data %&gt;% plotMSCovariates(metadata=sample_meta_ms)
+
+plot_grid(gg_es_500_batch, gg_mds_500_batch, align=&quot;vh&quot;, axis=&quot;tb&quot;, rel_widths=c(1, 0.85))</code></pre>
+<p><img src="figure/figure_heterogeneity.Rmd/unnamed-chunk-22-1.png" width="720" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>gg_coda_mds &lt;- caos$PF$plotSampleDistances(
+  space=&#39;coda&#39;, sample.colors=caos$PF$data.object$misc$sample_metadata$Processing_site,
+  legend.position=c(0, 1), color.title=&#39;Processing site&#39;
+) + scale_color_brewer(palette=&quot;Dark2&quot;) + leg_theme
+
+gg_coda_mds</code></pre>
+<p><img src="figure/figure_heterogeneity.Rmd/unnamed-chunk-23-1.png" width="384" style="display: block; margin: auto;" /></p>
+</div>
+</div>
+<div id="compile-supp.-figure" class="section level3">
+<h3>Compile supp. figure</h3>
+<pre class="r"><code>ggs_od_es &lt;- list(gg_es_100, gg_es_500_sex, gg_es_500_batch) %&gt;% lapply(`+`, theme(
+  axis.text.x=element_text(size=9), axis.text.y=element_text(size=9),
+  axis.title.y=element_text(size=11), plot.margin=margin(), axis.title.x=element_blank()
+)) %&gt;% rasterise(dev=&quot;ragg_png&quot;)
+
+leg_guide &lt;- function(...) guide_legend(
+  title.position=&quot;top&quot;, direction=&quot;horizontal&quot;, nrow=3, 
+  keywidth=unit(1, &quot;pt&quot;), keyheight=unit(1, &quot;pt&quot;), ...
+)
+ggs_mds_es &lt;- list(gg_mds_100, gg_mds_500_sex, gg_mds_500_batch) %&gt;% lapply(`+`, theme(
+  legend.text=element_text(size=7), legend.title=element_text(size=9), legend.position=&quot;bottom&quot;,
+  legend.margin=margin(), legend.box.margin=margin()
+)) %&gt;% 
+  lapply(`+`, guides(fill=leg_guide(override.aes=list(shape=21)), shape=leg_guide(), 
+                     color=leg_guide(override.aes=list(shape=21)))
+)
+
+gg &lt;- plot_grid(
+  plot_grid(
+    rasterise(gg_pf_comp_s, dev=&quot;ragg_png&quot;),
+    gg_coda_mds + theme(plot.margin=margin(t=20, r=20, b=20)),
+    ncol=1, rel_heights=c(2, 1.5)
+  ),
+  plot_grid(
+    plotlist=c(ggs_od_es, ggs_mds_es),
+    byrow=FALSE,
+    ncol=2, align=&quot;h&quot;, axis=&quot;tb&quot;, rel_widths=c(1, 0.7),
+    scale=0.95
+  ), 
+  ncol=2, rel_widths=c(1.25, 2)
+)
+
+grDevices::cairo_pdf(figurePath(&quot;4s_heterogeneity.pdf&quot;), width=8.5, height=9)
+gg
+tr &lt;- dev.off();
+
+gg</code></pre>
+<p><img src="figure/figure_heterogeneity.Rmd/unnamed-chunk-24-1.png" width="816" style="display: block; margin: auto;" /></p>
+<br>
+<p>
+<button type="button" class="btn btn-default btn-workflowr btn-workflowr-sessioninfo" data-toggle="collapse" data-target="#workflowr-sessioninfo" style="display: block;">
+<span class="glyphicon glyphicon-wrench" aria-hidden="true"></span> Session information
+</button>
+</p>
+<div id="workflowr-sessioninfo" class="collapse">
+<pre class="r"><code>sessionInfo()</code></pre>
+<pre><code>R version 4.0.3 (2020-10-10)
+Platform: x86_64-pc-linux-gnu (64-bit)
+Running under: Ubuntu 18.04.6 LTS
+
+Matrix products: default
+BLAS:   /usr/local/R/R-4.0.3/lib/R/lib/libRblas.so
+LAPACK: /usr/local/R/R-4.0.3/lib/R/lib/libRlapack.so
+
+Random number generation:
+ RNG:     L&#39;Ecuyer-CMRG 
+ Normal:  Inversion 
+ Sample:  Rejection 
+ 
+locale:
+[1] C
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+ [1] scITD_1.0.0         cacoaAnalysis_0.1.0 dataorganizer_0.1.0
+ [4] ggrastr_1.0.1       sccore_1.0.1        cacoa_0.2.0        
+ [7] cowplot_1.1.1       conos_1.4.4         igraph_1.2.6       
+[10] Matrix_1.2-18       magrittr_2.0.1      forcats_0.5.1      
+[13] stringr_1.4.0       dplyr_1.0.7         purrr_0.3.4        
+[16] readr_1.4.0         tidyr_1.1.4         tibble_3.1.5       
+[19] ggplot2_3.3.5       tidyverse_1.3.0     workflowr_1.6.2    
+
+loaded via a namespace (and not attached):
+  [1] utf8_1.2.2           reticulate_1.22      R.utils_2.10.1      
+  [4] tidyselect_1.1.1     grid_4.0.3           Rtsne_0.15          
+  [7] devtools_2.3.2       munsell_0.5.0        ica_1.0-2           
+ [10] codetools_0.2-16     ragg_0.4.1           withr_2.4.2         
+ [13] colorspace_2.0-2     highr_0.9            knitr_1.36          
+ [16] rstudioapi_0.13      stats4_4.0.3         ggsignif_0.6.1      
+ [19] pbmcapply_1.5.0      labeling_0.4.2       git2r_0.27.1        
+ [22] urltools_1.7.3       mnormt_2.0.2         polyclip_1.10-0     
+ [25] farver_2.1.0         rprojroot_2.0.2      Matrix.utils_0.9.8  
+ [28] vctrs_0.3.8          generics_0.1.0       xfun_0.26           
+ [31] R6_2.5.1             doParallel_1.0.16    ggbeeswarm_0.6.0    
+ [34] clue_0.3-59          locfit_1.5-9.4       cachem_1.0.6        
+ [37] assertthat_0.2.1     promises_1.1.1       scales_1.1.1        
+ [40] beeswarm_0.4.0       gtable_0.3.0         processx_3.4.5      
+ [43] drat_0.1.8           rlang_0.4.11         systemfonts_1.0.0   
+ [46] Rmisc_1.5            GlobalOptions_0.1.2  splines_4.0.3       
+ [49] rstatix_0.7.0        broom_0.7.9          brew_1.0-6          
+ [52] yaml_2.2.1           reshape2_1.4.4       abind_1.4-5         
+ [55] modelr_0.1.8         backports_1.2.1      httpuv_1.5.4        
+ [58] tools_4.0.3          usethis_1.6.3        psych_2.1.6         
+ [61] ellipsis_0.3.2       jquerylib_0.1.4      RColorBrewer_1.1-2  
+ [64] coda.base_0.3.1      BiocGenerics_0.36.1  sessioninfo_1.1.1   
+ [67] Rcpp_1.0.7           plyr_1.8.6           ps_1.4.0            
+ [70] prettyunits_1.1.1    ggpubr_0.4.0         dendsort_0.3.3      
+ [73] GetoptLong_1.0.5     S4Vectors_0.28.1     grr_0.9.5           
+ [76] haven_2.4.1          ggrepel_0.9.1        cluster_2.1.0       
+ [79] fs_1.5.0             data.table_1.14.2    openxlsx_4.2.3      
+ [82] circlize_0.4.13      triebeard_0.3.0      reprex_0.3.0        
+ [85] tmvnsim_1.0-2        whisker_0.4          matrixStats_0.61.0  
+ [88] pkgload_1.2.1        hms_1.1.1            evaluate_0.14       
+ [91] rio_0.5.26           RMTstat_0.3          readxl_1.3.1        
+ [94] N2R_0.1.1            IRanges_2.24.1       gridExtra_2.3       
+ [97] shape_1.4.6          testthat_3.0.0       compiler_4.0.3      
+[100] crayon_1.4.1         R.oo_1.24.0          htmltools_0.5.2     
+[103] rTensor_1.4.8        mgcv_1.8-33          later_1.1.0.1       
+[106] lubridate_1.7.9.2    DBI_1.1.1            tweenr_1.0.1        
+[109] dbplyr_2.0.0         pagoda2_1.0.7        ComplexHeatmap_2.9.4
+[112] MASS_7.3-53          car_3.0-10           cli_3.0.1           
+[115] R.methodsS3_1.8.1    parallel_4.0.3       pkgconfig_2.0.3     
+[118] foreign_0.8-80       xml2_1.3.2           foreach_1.5.1       
+[121] vipor_0.4.5          leidenAlg_0.1.0      rvest_0.3.6         
+[124] callr_3.5.1          digest_0.6.28        rmarkdown_2.11      
+[127] cellranger_1.1.0     Rook_1.1-1           edgeR_3.32.1        
+[130] curl_4.3.2           rjson_0.2.20         lifecycle_1.0.1     
+[133] nlme_3.1-149         jsonlite_1.7.2       carData_3.0-4       
+[136] limma_3.46.0         desc_1.3.0           fansi_0.5.0         
+[139] pillar_1.6.3         lattice_0.20-41      fastmap_1.1.0       
+[142] httr_1.4.2           pkgbuild_1.1.0       glue_1.4.2          
+[145] remotes_2.2.0        zip_2.2.0            png_0.1-7           
+[148] iterators_1.0.13     ggforce_0.3.2        stringi_1.7.5       
+[151] textshaping_0.2.1    memoise_2.0.0        irlba_2.3.3         
+[154] ape_5.5             </code></pre>
+</div>
+</div>
+</div>
+
+
+<!-- Adjust MathJax settings so that all math formulae are shown using
+TeX fonts only; see
+http://docs.mathjax.org/en/latest/configuration.html.  This will make
+the presentation more consistent at the cost of the webpage sometimes
+taking slightly longer to load. Note that this only works because the
+footer is added to webpages before the MathJax javascript. -->
+<script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    "HTML-CSS": { availableFonts: ["TeX"] }
+  });
+</script>
+
+
+</div>
+</div>
+
+</div>
+
+<script>
+
+// add bootstrap table styles to pandoc tables
+function bootstrapStylePandocTables() {
+  $('tr.odd').parent('tbody').parent('table').addClass('table table-condensed');
+}
+$(document).ready(function () {
+  bootstrapStylePandocTables();
+});
+
+
+</script>
+
+<!-- tabsets -->
+
+<script>
+$(document).ready(function () {
+  window.buildTabsets("TOC");
+});
+
+$(document).ready(function () {
+  $('.tabset-dropdown > .nav-tabs > li').click(function () {
+    $(this).parent().toggleClass('nav-tabs-open');
+  });
+});
+</script>
+
+<!-- code folding -->
+
+<script>
+$(document).ready(function ()  {
+
+    // temporarily add toc-ignore selector to headers for the consistency with Pandoc
+    $('.unlisted.unnumbered').addClass('toc-ignore')
+
+    // move toc-ignore selectors from section div to header
+    $('div.section.toc-ignore')
+        .removeClass('toc-ignore')
+        .children('h1,h2,h3,h4,h5').addClass('toc-ignore');
+
+    // establish options
+    var options = {
+      selectors: "h1,h2,h3",
+      theme: "bootstrap3",
+      context: '.toc-content',
+      hashGenerator: function (text) {
+        return text.replace(/[.\\/?&!#<>]/g, '').replace(/\s/g, '_');
+      },
+      ignoreSelector: ".toc-ignore",
+      scrollTo: 0
+    };
+    options.showAndHide = true;
+    options.smoothScroll = true;
+
+    // tocify
+    var toc = $("#TOC").tocify(options).data("toc-tocify");
+});
+</script>
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>
