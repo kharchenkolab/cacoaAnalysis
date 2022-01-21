@@ -49,7 +49,7 @@ caos <- c("ASD", "AZ", "EP", "MS", "PF") %>% sn() %>% plapply(function(dn) {
 ### MS L2-3 disease stage
 
 ```{r, fig.width=3, fig.height=3}
-m_size <- 3
+m_size <- 2
 gg_ms_stage <- caos$MS$plotSampleDistances(
   sample.colors=caos$MS$data.object$misc$sample_metadata$stage, show.sample.size=FALSE, 
   cell.type="EN-L2-3", color.title="Stage", size=m_size
@@ -95,7 +95,8 @@ gg_pf_meta
 ### PF, split by processing site
 
 ```{r, fig.width=3, fig.height=3, message=FALSE, warning=FALSE}
-df_melt <- caos$PF$.__enclos_env__$private$extractCodaData(cell.groups=caos$PF$cell.groups, ret.groups=FALSE) %>%
+df_melt <- caos$PF$.__enclos_env__$private$extractCodaData(cell.groups=caos$PF$cell.groups, 
+                                                           ret.groups=FALSE) %>%
   {100 * . / rowSums(.)} %>% as.data.frame() %>%
   mutate(group=caos$PF$sample.groups[rownames(.)], sample=rownames(.)) %>%
   reshape2::melt(id.vars=c("group", "sample")) %>%
@@ -107,8 +108,10 @@ p_palette <- c("Control, TGen"="#a6cee3", "Control, Vanderbilt"="#33a02c",
 p_types <- c("Fibroblasts", "MUC5B+", "Myofibroblasts")
 gg_pf_fracs <- filter(df_melt, (variable %in% p_types)) %>% 
   mutate(variable=factor(variable, levels=p_types)) %>% 
-  cacoa:::plotCountBoxplotsPerType(plot.theme=caos$PFpf$plot.theme, jitter.width=0.05, alpha=1, size=0.5) +
-    scale_y_continuous(limits=c(0, 3.75), expand=c(0, 0), name="Cell fraction, %") + 
+  cacoa:::plotCountBoxplotsPerType(plot.theme=caos$PFpf$plot.theme, jitter.width=0.05, 
+                                   alpha=1, size=0.5) +
+    scale_y_continuous(limits=c(0, 6), expand=c(0, 0), breaks=c(0, 2, 4, 6), 
+                       name="Cell fraction, %") + 
     scale_x_discrete(expand=c(0, 0.002, 0, 0)) +
     scale_fill_manual(values=p_palette) +
     theme_legend_position(c(0.01, 1.05)) +
@@ -132,7 +135,8 @@ covar_names <- list(
 ```{r, fig.width=10, fig.height=2.5}
 covar_pvals <- names(covar_names) %>% sn() %>% sapply(function(cn) {
   smd <- caos[[cn]]$data.object$misc$sample_meta %>% as.data.frame()
-  caos[[cn]]$estimateMetadataSeparation(smd, space="expression.shifts", dist="l1", show.warning=FALSE)
+  caos[[cn]]$estimateMetadataSeparation(smd, space="expression.shifts", dist="l1", 
+                                        show.warning=FALSE)
   unname(caos[[cn]]$test.results$metadata.separation$padjust[covar_names[[cn]][1]])
 })
 
@@ -162,12 +166,26 @@ plot_grid(plotlist=ggs_covar, labels=paste0("p=", signif(covar_pvals, 2)), nrow=
 
 ### Compile figure
 
-```{r, fig.width=8.5, fig.height=4.25, warning=FALSE, message=FALSE}
-theme_ax <- theme(axis.text.x=element_text(size=9), axis.text.y=element_text(size=8))
+- Reduce the point size for MDS?
+- Reduce legend font for fractions?
+- Add empty space on top for the fractions
+- Reduce the border size and remove the plot background
+- Keep MDSes square, but reduce the width, also increase spacing
+
+```{r, fig.width=8.5, fig.height=4, warning=FALSE, message=FALSE}
+theme_ax <- theme(
+  axis.text.x=element_text(size=9), axis.text.y=element_text(size=8),
+  axis.ticks=element_line(size=0.25)
+)
 leg_theme <- theme(
   legend.title=element_text(size=9), legend.text=element_text(size=8), 
   legend.background=element_blank(), legend.key=element_rect(fill="transparent")
 )
+
+theme_border <- theme(
+  panel.border=element_rect(size=0.25)
+)
+
 ggs_covar %<>% lapply(`+`, leg_theme)
 p_ggs_covar <- c(ggs_covar[4], ggs_covar[-4])
 
@@ -178,16 +196,18 @@ p_labs <- names(p_ggs_covar) %>% paste0(., ", p=", signif(covar_pvals, 2)[.]) %>
   setNames(names(p_ggs_covar)) %>% {c("", .[c("ASD", "EP")], "", .[c("MS", "AZ", "PF")])}
 
 plot_grid(
-  plotlist=c(
+  plotlist=lapply(c(
     list(gg_ms_stage + leg_theme),
     p_ggs_covar,
-    list(gg_pf_fracs + theme_ax + theme(legend.key.height=unit(12, "pt"), 
-                                        axis.text.x=element_text(size=unit(8, "pt")))),
-    list(gg_pf_meta + theme_ax + theme(axis.title.y=element_text(hjust=1)))
-  ),
-  nrow=2, byrow=FALSE, labels=p_labs, scale=0.95, 
+    list(gg_pf_fracs + theme_ax + 
+           theme(legend.key.height=unit(12, "pt"), legend.text=element_text(size=8, margin=margin(l=-5)),
+                 axis.text.x=element_text(size=unit(8, "pt")), legend.key.width=unit(12, "pt"))),
+    list(gg_pf_meta + theme_ax + 
+           theme(axis.title.y=element_text(hjust=1), axis.text.x=element_text(angle=45, vjust=1)))
+  ), `+`, theme_border),
+  nrow=2, byrow=FALSE, labels=p_labs, scale=0.93, 
   label_fontface="oblique", hjust=0, label_x=0.07, label_y=0.99, label_size=12,
-  rel_widths=c(1, 1, 1, 1.2)
+  rel_widths=c(1, 1, 1, 1.25)
 )
 
 ggsave(figurePath("4_heterogeneity.pdf"))
