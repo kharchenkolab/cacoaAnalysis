@@ -71,7 +71,7 @@ gg_markers %>%
 ```
 
 ```{r, message=FALSE, warning=FALSE}
-cao_pf$estimateDiffCellDensity(type='permutation', n.permutations=1000, verbose=TRUE, 
+cao_pf$estimateDiffCellDensity(type='permutation', n.permutations=1000, verbose=FALSE, 
                                n.cores=45, name='cell.density.kde')
 ```
 
@@ -180,7 +180,7 @@ theme_nm <- theme(
   plot.margin=margin(), panel.border=element_rect(size=0.25)
 )
 
-scale_row <- 0.97
+scale_row <- 0.95
 scale_inner <- 0.99
 plot_grid(
   plot_grid(
@@ -202,7 +202,7 @@ plot_grid(
       label_fontface="italic", label_x=0.05, hjust=0, label_size=gene_lab_size, ncol=2,
       scale=scale_inner
     ),
-    nrow=1, scale=scale_row
+    nrow=1, scale=scale_row * 0.99
   ),
   plot_grid(
     rast(gg_ms_emb) + theme_nm,
@@ -215,7 +215,7 @@ plot_grid(
     ),
     nrow=1, rel_widths=c(1, 1, 1.5), scale=scale_row
   ),
-  nrow=3, rel_heights=c(1.7, 1, 1.1), scale=0.98
+  nrow=3, rel_heights=c(1.7, 1, 1.1), scale=0.95
 )
 
 ggsave(figurePath("2_composition_cf.pdf"))
