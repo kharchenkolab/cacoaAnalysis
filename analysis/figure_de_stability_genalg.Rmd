@@ -1,0 +1,598 @@
+---
+title: "Get genalg covariate"
+output: html_notebook
+---
+
+
+```{r}
+# library(devtools)
+# install_github("jokergoo/ComplexHeatmap")
+# install_github('kharchenkolab/pagoda2', build_vignettes = TRUE)
+```
+
+
+# Setup
+```{r}
+library(reshape2)
+library(ggplot2)
+# devtools::load_all()
+
+set.seed(123456)
+
+n.cells.cutoff <- 50
+
+# Number of samples is unbalanced
+print(c(sum(cao$sample.groups == cao$target.level), sum(cao$sample.groups == cao$ref.level)))
+
+# Number of cells per cell type
+cnts <- cao$cell.groups %>% data.frame(anno=., group=cao$sample.per.cell[names(.)]) %>%
+table() %>% rbind() %>% t()
+
+samples.ref <- names(cao$sample.groups)[cao$sample.groups == cao$ref.level]
+samples.trgt <- names(cao$sample.groups)[cao$sample.groups == cao$target.level]
+cell.types <- levels(cao$cell.groups)
+
+samples.per.type <- c()
+for(cell.type in cell.types){
+  samples <- rownames(cnts)[cnts[,cell.type] > n.cells.cutoff]
+  samples.per.type <- rbind(samples.per.type,
+  c(cell.type, sum(samples %in% samples.ref), sum(samples %in% samples.trgt)))
+}
+samples.per.type <- as.data.frame(samples.per.type)
+colnames(samples.per.type) <- c('cell.type', 'in.ref', 'in.target')
+print(samples.per.type)
+samples.per.type[,2:3] <- apply(samples.per.type[,2:3], 2, as.numeric)
+rownames(samples.per.type) <- samples.per.type$cell.type
+
+n.samples.cutoff <- 5
+cell.types.to.work <- samples.per.type$cell.type[rowSums(samples.per.type[,2:3] < n.samples.cutoff) == 0]
+cell.types.to.work
+
+
+
+cell.types = levels(cao$cell.groups)
+# cell.types.to.test = cell.types[13] #"L5-L6 EN"
+# cell.types.to.test = cell.types[7] #"IN-PV"
+# cell.types.to.test = cell.types[3]  #EN-MIX
+
+cell.type.of.interest = cell.types.to.work
+
+cell.type.of.interest
+
+```
+
+```{r}
+cao$estimateDEPerCellType(test=test, covariates=covs[, i.cov, drop=F],
+                          resampling.method = 'loo',
+                          cell.groups = cao$cell.groups[cao$cell.groups == cell.types.to.test],
+                          name = 'genalg')
+```
+
+
+# Run genalg
+```{r}
+n.top.cutoffs = c(seq(100, 500, 100))
+n.covariates = 90
+test = 'DESeq2.Wald'
+n.children = n.covariates/3
+n.epoch = 50
+n.parent = 0  # the value if shanging, the initial values iss 0
+n.parent.to.remain = n.covariates/3
+
+for(cell.types.to.test in cell.type.of.interest){
+  print(cell.types.to.test)
+  
+  
+  covariates.all <- paste('s', 1:n.covariates, sep = '')
+  sample.names = names(cao$sample.groups)
+  group.variable = cao$sample.groups[sample.names]
+  n.samples = length(sample.names)
+  # set.seed(125)
+  covs = as.data.frame(matrix(rnorm(n.samples * n.covariates), nrow = n.samples,
+  dimnames = list(sample.names, covariates.all)))
+  
+  # for(i.cov.lm in 1:ncol(covs)){
+  #   df.tmp = data.frame(cov = covs[,i.cov.lm], group =  group.variable == 'MS')
+  #   cov.lm = lm(cov ~ group , df.tmp) 
+  #   summary(cov.lm)
+  #   covs[, i.cov.lm] = resid(cov.lm)
+  # }
+  
+  # source('methods_de.R')
+  
+  
+  de.res.cov = list()
+  
+  res.epoch = list()
+  jaccard.score = c()
+  covs.new = matrix(nrow = nrow(covs), ncol = 0)
+  for(i.epoch in 1:n.epoch){
+    
+    for(i.cov.lm in 1:ncol(covs)){
+      df.tmp = data.frame(cov = covs[,i.cov.lm], group =  group.variable == 'MS')
+      cov.lm = lm(cov ~ group , df.tmp) 
+      summary(cov.lm)
+      covs[, i.cov.lm] = resid(cov.lm)
+    }
+    
+    print(paste('Epoch', as.character(i.epoch), sep = " ", collapse = NULL))
+    
+    jaccard.score = c(jaccard.score, unlist(plapply((n.parent+1):ncol(covs),
+      function(i.cov){
+      print(paste('Covariate', as.character(i.cov), sep = " ", collapse = NULL))
+      cao$estimateDEPerCellType(test=test, covariates=covs[, i.cov, drop=F],
+                                resampling.method = 'loo',
+                                cell.groups = cao$cell.groups[cao$cell.groups == cell.types.to.test],
+                                name = 'genalg')
+      
+      jaccard.score.tmp = c()
+      for(n.top in n.top.cutoffs){
+        de.genes = list()
+        smpl.names = setdiff(names(cao$test.results$genalg), 'initial')
+        for(i.loo in 1:length(smpl.names)){
+          scores = cao$test.results$genalg[[smpl.names[i.loo]]][[cell.types.to.test]]
+          de.genes[[i.loo]] = rownames(scores)[rank(scores$pvalue) <= n.top]
+        }
+          
+        jacc.values = c()
+        for(i in 1:length(de.genes)){
+          for(j in 1:length(de.genes)){
+            if (j <= i) next
+            jacc.values = c(jacc.values,length(intersect(de.genes[[i]], de.genes[[j]])) /
+                              length(unique(c(de.genes[[i]], de.genes[[j]]))))
+          }
+        }
+        jacc.values = jacc.values[!is.na(jacc.values)]
+        jaccard.score.tmp = c(jaccard.score.tmp, min(jacc.values))
+      }
+      return(mean(jaccard.score.tmp))
+    }, n.cores = 90)))
+    
+    
+    idx_parent = which(rank(-jaccard.score) <= n.parent.to.remain)
+    jaccard.score = jaccard.score[idx_parent]
+    print(mean(jaccard.score))
+    
+    
+    covs.new = covs[,idx_parent]
+    n.parent = ncol(covs.new)
+    
+    covs.new.cor = cor(covs.new)
+    for(i in 1:n.parent){
+      if(sum(covs.new.cor[i,] < 0) > n.parent / 2){
+        covs.new[,i] = (-1) * covs.new[,i]
+        covs.new.cor = cor(covs.new)
+      }
+    }
+    
+    res.epoch[[i.epoch]] = list(cor = covs.new.cor,
+    covs = covs.new,
+    jacc = jaccard.score)
+    saveRDS(res.epoch, paste('/home/aigolkina/coda/stab_genalg/res_new1_', dataset.name, '_cells_',
+    cell.types.to.test, '_epoch', i.epoch,'.rds', sep=''))
+    
+    # set.seed(239)
+    # recombination + mutation
+    children = combn(n.parent, 2)[,sample.int(n.parent*(n.parent-1)/2, 2*n.children)]
+    for(i in 1:n.children){
+      child = covs.new[,children[1,i]]
+      idx.tmp = sample.int(length(child), round(length(child)/2))
+      child[idx.tmp] = covs.new[idx.tmp,children[2,i]]
+      child = child + rnorm(length(child))/2  # it was 10 before
+      covs.new = cbind(covs.new, child)
+    }
+    # from distribution
+    for(i in (n.children + 1):(n.children * 2)){
+      child.m = rowMeans(covs.new[,children[,i]])
+      covs.new = cbind(covs.new, child.m + rnorm(length(child.m))/5)
+    }
+    
+    # TODO: fix the scale of a covariate
+    covs = covs.new
+    colnames(covs) <- paste('s', 1:ncol(covs), sep = '')
+    covariates.all <- colnames(covs)
+    
+    if(min(covs.new.cor) > 0.99) break
+  }
+
+}
+```
+
+
+# Connection to covariates
+```{r, fig.width=7, fig.height=6}
+
+ms.cov <- read.table('/d0/home/aigolkina/coda/cacoa-examples/report/ms_covariate.csv', 
+                    sep = ',', header = 1)
+rownames(ms.cov) <- ms.cov[,1]
+ms.cov$Sex <- (ms.cov$Sex == 'male') * 1
+
+# ms.cov <- read.table('/d0/home/aigolkina/coda/cacoa-examples/report/ms_metadata.csv', 
+#                     sep = ',', header = 1)
+
+sample_metadata <- "/d0/home/aigolkina/coda/cacoa-examples/report/ms_metadata.csv" %>%
+  read.table(sep = ',', header = 1) %>% mutate(sample=substr(.$cell, 20, 100)) %>% split(.$sample) %>%
+  lapply(`[`, 1,) %>% do.call(rbind, .) %>% .[,5:14]
+# sample_metadata %<>% lapply(setNames, .$sample)
+sample_metadata <- as.data.frame(sample_metadata)
+rownames(sample_metadata) <- sample_metadata$sample
+
+ms.cov$batch = sample_metadata[rownames(ms.cov), 'Seqbatch'] %in% c('SEQ1', 'SEQ3')
+ms.cov$disease <- sample_metadata[rownames(ms.cov), 'diagnosis'] %in% c('MS')
+
+
+
+path.pref <- '/home/aigolkina/coda/stab_genalg/'
+paths.res <- c('res4_ms_cells_',
+               'res_cells_',
+               'res_ms_cells_')
+
+paths.res <- c('res6_ms_cells_',
+               'res7_ms_cells_',
+               'res8_ms_cells_')
+
+# paths.res = 'res9_ms_cells_'
+
+covs.all = c()
+for(p in paths.res) {
+  files <- list.files(pattern = paste('^', p, sep = ''), path = path.pref)
+  files <- gsub(p, "", files)
+  cell.types <- unique(sapply(files, function(s){s1 = strsplit(s, '_'); return(s1[[1]][1])}))
+  covs.tmp <- c()
+  for(cell.type in cell.types) {
+    i <- 1
+    while(file.exists(paste0(path.pref, p, cell.type, '_epoch', i, '.rds', collapse = ''))){
+      i <- i + 1
+    }
+    i <- i - 1
+    cov.tmp <- readRDS(paste0(path.pref, p, cell.type, '_epoch', i, '.rds', collapse = ''))
+    cov.tmp <- cov.tmp[[i]]$covs[,1,drop=F]
+    if(length(covs.tmp) == 0){
+      covs.tmp <- cov.tmp
+    } else {
+      covs.tmp = cbind(covs.tmp, cov.tmp[rownames(covs.tmp),])
+    }
+  }
+  colnames(covs.tmp) <- paste(cell.types, p, sep = '_')
+  
+  if(length(covs.all) == 0){
+    covs.all <- covs.tmp
+  } else {
+    covs.all <- cbind(covs.all, covs.tmp[rownames(covs.tmp),])
+  }
+}
+
+
+mx.tmp = abs(cor(covs.all))
+mx.names = sort(rownames(mx.tmp))
+mx.names = setdiff(mx.names, c('Glia-MIX_res_cells_', 'EN-PYR_res_cells_'))
+
+
+colnames(mx.tmp) <- gsub("_res6_ms_cells_", ":1", colnames(mx.tmp))
+colnames(mx.tmp) <- gsub("_res7_ms_cells_", ":2", colnames(mx.tmp))
+colnames(mx.tmp) <- gsub("_res8_ms_cells_", ":3", colnames(mx.tmp))
+
+rownames(mx.tmp) <- gsub("_res6_ms_cells_", ":1", rownames(mx.tmp))
+rownames(mx.tmp) <- gsub("_res7_ms_cells_", ":2", rownames(mx.tmp))
+rownames(mx.tmp) <- gsub("_res8_ms_cells_", ":3", rownames(mx.tmp))
+mx.names <- sort(rownames(mx.tmp))
+
+
+p <- plotHeatmap(mx.tmp[mx.names,mx.names], row.order = F, col.order=F, palette = brewerPalette('Spectral'))
+p  + guides(fill=guide_legend(title="Absolite correlation",
+                              title.position = 'left')) + 
+  theme(legend.title = element_text(angle = 90))
+
+# pdf(file = "/home/aigolkina/coda/cacoa-examples/report/figures_stab/corr_genalg_cell_types.pdf",
+#     width = 7,
+#     height = 6)
+# print(p)
+# dev.off()
+
+```
+
+
+```{r fig.width=7, fig.height=6}
+
+
+# {r fig.width=3, fig.height=4}
+
+colnames(covs.all) <- gsub("_res6_ms_cells_", ":1", colnames(covs.all))
+colnames(covs.all) <- gsub("_res7_ms_cells_", ":2", colnames(covs.all))
+colnames(covs.all) <- gsub("_res8_ms_cells_", ":3", colnames(covs.all))
+
+xx = abs(cor(cbind(covs.all[,mx.names], ms.cov[rownames(covs.all),2:7]),covs.all[,mx.names]))
+# yy <- apply(xx, 2, rank)
+# plotHeatmap(yy, row.order = F, col.order=F)
+
+p <- plotHeatmap(t(xx), row.order = F, col.order=F, palette = brewerPalette('Spectral'), legend.title = '') + guides(fill=guide_legend(title="Absolite correlation",
+                              title.position = 'left')) + 
+  theme(legend.title = element_text(angle = 90))
+p
+
+# p <- plotHeatmap(t(xx), row.order = F, col.order=F, legend.title = '')
+# p
+
+# pdf(file = "/home/aigolkina/coda/cacoa-examples/report/figures_stab/corr_genalg_cell_types_traits.pdf",
+#    width = 3,
+#    height = 4)
+# print(p)
+# dev.off()
+
+pdf(file = "/home/aigolkina/coda/cacoa-examples/report/figures_stab/corr_genalg_full.pdf",
+   width = 7.5,
+   height = 6)
+print(p)
+dev.off()
+
+
+
+```
+
+## Run with covariates
+```{r}
+
+for(ga.name in colnames(covs.all)[1]){
+  print(ga.name)
+  cv = covs.all[names(cao$sample.groups), ga.name, drop=F]
+  colnames(cv) <- 'cov'
+  cao$estimateDEPerCellType(test='DESeq2.Wald',
+                            covariates = cv,
+                            name=paste('ga', ga.name, sep = '.'), resampling.method = 'loo')  
+}
+
+# saveRDS(file = "/home/aigolkina/coda/cacoa-examples/report/report-de/ms.output.cacoa.ga3.rds", 
+#         object = cao, compress = F)
+
+
+
+```
+
+# Estimate stability + plot
+```{r fig.height=3, fig.width=4}
+
+
+cao <- readRDS('/home/aigolkina/coda/cacoa-examples/report/report-de/ms.output.cacoa.ga3.rds')
+ga.nemes.res = c()
+for(ga.name in colnames(covs.all)[21:30]){
+  ga.nemes.res = c(ga.nemes.res, paste('ga', ga.name, sep = '.'))
+}
+
+cao$estimateDEStabilityPerTest(de.names = ga.nemes.res, name = 'jacc.ga', top.n.genes = 100)
+cao$estimateDEStabilityPerTest(de.names = 'DESeq2.Wald.loo', name = 'jacc.init', top.n.genes = 100)
+
+jacc = cao$test.results$jacc.ga
+
+jacc$init = cao$test.results$jacc.init[jacc$cmp,]$value
+
+# cao$plotDEStabilityPerTest(name = 'jacc.ga')
+
+jacc$diff = jacc$value - jacc$init
+
+
+jacc$cell.type = sapply(jacc$group, function(s) strsplit(strsplit(s, '_')[[1]][1], '\\.')[[1]][2])
+
+jacc.main = jacc[jacc$cell.type == jacc$cmp,]
+jacc <- jacc[jacc$cell.type != jacc$cmp,]
+
+
+library(ggpubr)
+
+
+pvals <- sapply(unique(jacc$cmp), function(s){ 
+  tmp = t.test(jacc$value[jacc$cmp == s])
+  return(tmp$p.value)
+  })
+
+p <- ggplot(jacc, aes(x=cell.type, y=diff, fill=cell.type)) + geom_boxplot(outlier.shape = NA) + 
+  geom_jitter(alpha=0.1, width = 0.5) + xlab('') + ylab('Delta of Jaccard Index') +
+  geom_point(data = jacc.main, aes(x = cell.type, y = diff))  +
+   theme(legend.position ='none') + geom_hline(yintercept=0, linetype="dashed", color = "darkred") +
+  theme_minimal() + theme(legend.position ='none') +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+p  
+
+
+
+
+pdf(file = "/home/aigolkina/coda/cacoa-examples/report/figures_stab/jaccard_genalg_cell_types.pdf",
+   width = 4,
+   height = 3)
+print(p)
+dev.off()
+
+
+
+
+
+```
+
+
+
+# GO
+```{r, fig.height=5, fig.width=7}
+
+cov.ga = covs.all[,'IN-PV_res8_ms_cells_',drop=F]
+colnames(cov.ga) <- 'cov'
+
+cao$estimateDEPerCellType(test='DESeq2.Wald',
+                          covariates = cov.ga,
+                          name='ga.IN-PV')
+
+cao$estimateDEPerCellType(test='DESeq2.Wald',
+                          name='init')
+
+
+cao$estimateOntology(type = 'GSEA', de.name='init', org.db=org, name = 'gsea.init')
+cao$estimateOntology(type = 'GSEA', de.name='ga.IN-PV', org.db=org, name = 'gsea.ga')
+
+
+# p <- cao$plotOntologyHeatmap(name="gsea.init", genes="down")
+# p
+
+ex_words <- c('regulation', 'process', 'cell')
+p.ga <- cao$plotOntologyHeatmapCollapsed(name='gsea.ga', 
+                                 clust.method='ward.D', genes='up', n=25, exclude.words=ex_words)
+
+p.ga
+
+
+
+p.init <- cao$plotOntologyHeatmapCollapsed(name='gsea.init', 
+                                 clust.method='ward.D', genes='up', n=25, exclude.words=ex_words)
+
+p.init
+
+pdf(file = "/home/aigolkina/coda/cacoa-examples/report/figures_stab/ms_gsea_ga_up_25clusters.pdf",
+   width = 7,
+   height = 5)
+print(p.ga)
+dev.off()
+
+pdf(file = "/home/aigolkina/coda/cacoa-examples/report/figures_stab/ms_gsea_init_up_25clusters.pdf",
+   width = 7,
+   height = 5)
+print(p.init)
+dev.off()
+
+
+```
+
+```{r, fig.height=5, fig.width=7}
+ex_words <- c('regulation', 'process', 'cell')
+p.ga <- cao$plotOntologyHeatmapCollapsed(name='gsea.ga', 
+                                 clust.method='ward.D', genes='down', n=25, exclude.words=ex_words)
+
+p.ga
+
+
+
+p.init <- cao$plotOntologyHeatmapCollapsed(name='gsea.init', 
+                                 clust.method='ward.D', genes='down', n=25, exclude.words=ex_words)
+
+p.init
+
+
+pdf(file = "/home/aigolkina/coda/cacoa-examples/report/figures_stab/ms_gsea_ga_down_25clusters.pdf",
+   width = 7,
+   height = 5)
+print(p.ga)
+dev.off()
+
+pdf(file = "/home/aigolkina/coda/cacoa-examples/report/figures_stab/ms_gsea_init_down_25clusters.pdf",
+   width = 7,
+   height = 5)
+print(p.init)
+dev.off()
+```
+
+# Cov: PF Dataset
+
+```{r}
+
+# Read covariates
+
+path.pref <- '/home/aigolkina/coda/stab_genalg/'
+# paths.res <- c('res_new1_pf_cells_')
+paths.res <- 'res4_pf_cells_'
+
+# paths.res = 'res9_ms_cells_'
+
+
+p <- paths.res
+covs.all <-  c()
+files <- list.files(pattern = paste('^', p, sep = ''), path = path.pref)
+files <- gsub(p, "", files)
+cell.types <- unique(sapply(files, function(s){s1 = strsplit(s, '_'); return(s1[[1]][1])}))
+cell.types <-  intersect(cell.type.of.interest, cell.types)
+covs.tmp <- c()
+for(cell.type in cell.types) {
+  i <- 1
+  while(file.exists(paste0(path.pref, p, cell.type, '_epoch', i, '.rds', collapse = ''))){
+    i <- i + 1
+  }
+  i <- i - 1
+  cov.tmp <- readRDS(paste0(path.pref, p, cell.type, '_epoch', i, '.rds', collapse = ''))
+  cov.tmp <- cov.tmp[[i]]$covs[,1,drop=F]
+  if(length(covs.tmp) == 0){
+    covs.tmp <- cov.tmp
+  } else {
+    covs.tmp = cbind(covs.tmp, cov.tmp[rownames(covs.tmp),])
+  }
+}
+colnames(covs.tmp) <- paste(cell.types, p, sep = '_')
+
+if(length(covs.all) == 0){
+  covs.all <- covs.tmp
+} else {
+  covs.all <- cbind(covs.all, covs.tmp[rownames(covs.tmp),])
+}
+
+cor(covs.all)
+colnames(covs.all) <- gsub(paths.res, ":1", colnames(covs.all))
+
+# run with covariates
+
+for(ga.name in colnames(covs.all)){
+  print(ga.name)
+  cv = covs.all[names(cao$sample.groups), ga.name, drop=F]
+  colnames(cv) <- 'cov'
+  cao$estimateDEPerCellType(test='DESeq2.Wald',
+                            covariates = cv,
+                            name=paste('ga', ga.name, sep = '.'), resampling.method = 'loo')
+}
+
+# saveRDS(file = output.cacoa.file, object = cao, compress = F)
+```
+
+## plot
+```{r}
+
+ga.nemes.res = c()
+for(ga.name in colnames(covs.all)){
+  ga.nemes.res = c(ga.nemes.res, paste('ga', ga.name, sep = '.'))
+}
+
+cao$estimateDEStabilityPerTest(de.names = ga.nemes.res, name = 'jacc.ga', top.n.genes = 100)
+cao$estimateDEStabilityPerTest(de.names = 'DESeq2.Wald.loo', name = 'jacc.init', top.n.genes = 100)
+
+jacc = cao$test.results$jacc.ga
+
+jacc$init = cao$test.results$jacc.init[jacc$cmp,]$value
+
+# cao$plotDEStabilityPerTest(name = 'jacc.ga')
+
+jacc$diff = jacc$value - jacc$init
+
+
+jacc$cell.type = sapply(jacc$group, function(s) strsplit(strsplit(s, '_')[[1]][1], '\\.')[[1]][2])
+
+jacc.main = jacc[jacc$cell.type == jacc$cmp,]
+jacc <- jacc[jacc$cell.type != jacc$cmp,]
+
+
+library(ggpubr)
+
+
+pvals <- sapply(unique(jacc$cmp), function(s){ 
+  tmp = t.test(jacc$value[jacc$cmp == s])
+  return(tmp$p.value)
+  })
+
+p <- ggplot(jacc, aes(x=cell.type, y=diff, fill=cell.type)) + geom_boxplot(outlier.shape = NA) + 
+  geom_jitter(alpha=0.1, width = 0.5) + xlab('') + ylab('Delta of Jaccard Index') +
+  geom_point(data = jacc.main, aes(x = cell.type, y = diff))  +
+   theme(legend.position ='none') + geom_hline(yintercept=0, linetype="dashed", color = "darkred") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+p  
+
+
+```
+```{r}
+p
+```
+
+

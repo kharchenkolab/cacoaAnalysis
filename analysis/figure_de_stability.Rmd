@@ -1,0 +1,1123 @@
+---
+title: 'DE analysis'
+date: '`r Sys.Date()`'
+output:
+  html_document:
+    df_print: kable
+    theme: cerulean
+  pdf_document:
+  github_document:
+    toc: true 
+    toc_depth: 3 
+---
+
+
+# Libraries
+
+```{r, include=FALSE, message=FALSE}
+#library(cacoa)
+
+
+library(conos)
+library(sccore)
+library(ggplot2)
+library(dplyr)
+library(cowplot)
+library(viridis) 
+
+library(devtools)
+library(Matrix)
+library(dplyr)
+library(magrittr)
+library(org.Hs.eg.db)
+library('egg')  #ggarrange
+
+for (n in names(cao$data.object$samples)) {
+  cao$data.object$samples[[n]] %<>% pagoda2::Pagoda2$new()
+}
+
+library(knitr)
+library(optparse)
+
+```
+
+
+
+# Setup
+```{r}
+
+# ------ Cacoa object ------
+
+
+# calc.mode <- 'de'
+# calc.mode <- 'go'
+# calc.mode <- 'gsea'
+# calc.mode <- 'figures'
+
+methods.cmp.file <- paste('/home/aigolkina/coda/cacoa-examples/report/report-de/',
+                             'log.txt', sep = '')
+
+output.cacoa.file <- paste('/home/aigolkina/coda/cacoa-examples/report/report-de/',
+                             dataset.name, '.output.cacoa.rds', sep = '')
+
+output.df.file <- paste('/home/aigolkina/coda/cacoa-examples/report/report-de/',
+                             dataset.name, '_resampling_of_samples.rds', sep = '')
+
+path.figures <- '/home/aigolkina/coda/cacoa-examples/report/figures_stab/'
+
+# ------ Methods ------
+possible.tests <- c('DESeq2.Wald', 'DESeq2.LRT', 'edgeR',
+                   # 'Wilcoxon.edgeR', 't-test.edgeR',
+                   'Wilcoxon.DESeq2', 't-test.DESeq2',
+                   'limma-voom')
+
+possible.resampling <- c('loo')
+
+possible.tests.loo = paste(possible.tests, possible.resampling, sep = '.')
+
+# possible.resampling <- c('loo', 'bootstrap')
+# 
+# test.names = c()
+# for(test in possible.tests){
+#   for(resampling in possible.resampling){
+#     test.names = c(test.names, paste(test, resampling, sep='.'))
+#   }
+# }
+# 
+# test.names.loo = test.names[grep('loo', test.names)]
+# 
+# test.names.important <- test.names.loo
+# test.names.important <- test.names.important[-grep(c('Wilcoxon'), test.names.important)]
+# test.names.important <- test.names.important[-grep(c('LRT'), test.names.important)]
+# test.names.important <- test.names.important[-grep(c('t-test'), test.names.important)]
+# 
+# 
+# 
+# 
+# # ------ Stability thresholds ------
+# 
+# top.threshols100 <- seq(100, 500, 100)
+# top.threshols50 <- c(10,20,30,40,seq(50, 500, 50))
+# 
+
+# 
+# 
+# test.name.bo <- 'DESeq2.Wald.bootstrap'
+# name.de.nofilt <- 'DESeq2.loo.nofilt'
+# 
+
+test.name <- 'DESeq2.Wald.loo'
+top.n.genes <- 100
+
+p.val.cutoffs <- c(0.1, 0.05, 0.01, 0.005, 0.01)
+top.n.cutoffs = c(5, 10, 25, 50, 75, 100, 150, 200, 300, 400, 500, 1000, 2000)
+top.threshols.go <- c(100, 250, 500, 1000, 2000)
+
+example.celltypes <- names(sort(table(cao$cell.groups),decreasing=T))
+example.cell.type <- example.celltypes[1]
+
+# 
+# n.resamplings <- 30
+# 
+# # BP, up and down
+# # ordering up/down: facet_grid ggplot
+# # summary: ranking 
+# # supplementary tables - new plots...
+# # Stability per gene: limits on axis
+# 
+
+```
+
+
+# DE calculations
+## LOO and bootstrap resamplings for different DE methods
+```{r de-results}
+
+
+if(file.exists(output.cacoa.file)){
+  cao <- readRDS(output.cacoa.file) 
+  cao <- Cacoa$new(cao)
+}
+
+f.changes = FALSE
+for(test in possible.tests){
+  # message(test)
+  for(resampling in possible.resampling){
+    name <- paste(test, resampling, sep='.')
+    if(!(name %in% names(cao$test.results))){
+      print(name)
+      cao$estimateDEPerCellType(test = test, resampling.method = resampling,
+                              name = name)
+      f.changes = TRUE
+    }
+  }
+}
+
+if(f.changes) saveRDS(file = output.cacoa.file, object = cao, compress = F)
+
+
+# # One run without filtration of genes with low expression
+# if(!(name.de.nofilt %in% names(cao$test.results))){
+#   cao$estimateDEPerCellType(test = 'DESeq2', resampling.method = 'loo',
+#                                    name = name.de.nofilt, min.cell.frac = 0)
+#   saveRDS(file = output.cacoa.file, object = cao, compress = F)
+# }
+
+```
+
+
+## Stability: resampling with the same number of samples per case/control groups
+### Calc Samples per cell types
+```{r fig.width=8, fig.height=3}
+
+n.cells.cutoff <- 50
+
+# Number of samples is unbalanced
+print(c(sum(cao$sample.groups == cao$target.level), sum(cao$sample.groups == cao$ref.level)))
+
+# Number of cells per cell type
+cnts <- cao$cell.groups %>% data.frame(anno=., group=cao$sample.per.cell[names(.)]) %>%
+        table() %>% rbind() %>% t()
+
+samples.ref <- names(cao$sample.groups)[cao$sample.groups == cao$ref.level]
+samples.trgt <- names(cao$sample.groups)[cao$sample.groups == cao$target.level]
+cell.types <- levels(cao$cell.groups)
+
+samples.per.type <- c()
+for(cell.type in cell.types){
+  samples <- rownames(cnts)[cnts[,cell.type] > n.cells.cutoff]
+  samples.per.type <- rbind(samples.per.type, 
+                           c(cell.type, sum(samples %in% samples.ref), sum(samples %in% samples.trgt)))
+}
+samples.per.type <- as.data.frame(samples.per.type)
+colnames(samples.per.type) <- c('cell.type', 'in.ref', 'in.target')
+print(samples.per.type)
+samples.per.type[,2:3] <- apply(samples.per.type[,2:3], 2, as.numeric)
+rownames(samples.per.type) <- samples.per.type$cell.type
+
+```
+
+
+### Resampling of samples
+```{r Resampling of samples, fig.width=8, fig.height=3}
+n.perm.tmp <- 20
+p.val.cutoff <- 0.05
+
+df <- c()
+for(n.samples.cutoff in 5:8){
+  cell.types.to.work <- samples.per.type$cell.type[rowSums(samples.per.type[,2:3] < n.samples.cutoff) == 0,
+                                                   drop=F]
+  if(length(cell.types.to.work) == 0) next
+  print(cell.types.to.work)
+  samples.per.type[cell.types.to.work,]
+  
+  run.names <- c()
+  for(i in 1:n.perm.tmp){
+    run.names <- c(run.names, paste(cell.types.to.work, i, n.samples.cutoff, sep = ':'))
+  }
+  
+  n.signif.all <- plapply(run.names, function(run.name){
+    n.signif <- c()
+    cell.type <- strsplit(run.name[1], ':')[[1]][1]
+    samples <- rownames(cnts)[cnts[,cell.type] > n.cells.cutoff]
+    samples.r <- sample(samples[samples %in% samples.ref], n.samples.cutoff)
+    samples.t <- sample(samples[samples %in% samples.trgt], n.samples.cutoff)
+    if(!(run.name %in% names(cao$test.results))){
+      cao$estimateDEPerCellType(cell.groups = cao$cell.groups[cao$cell.groups == cell.type], 
+                                name = run.name,
+                                 min.cell.count = n.cells.cutoff, max.cell.count = n.cells.cutoff,
+                                sample.groups = cao$sample.groups[c(samples.r, samples.t)])          
+    }
+    n.signif <- c(n.signif, sum(cao$test.results[[run.name]]$initial[[cell.type]]$res$padj < p.val.cutoff))
+    list(n.signif = n.signif, samples.r=samples.r, samples.t=samples.t)
+  }, n.cores=min(length(run.names), 30) )
+  names(n.signif.all) <- run.names
+  
+  for(run.name in run.names){
+    cell.type <- strsplit(run.name[1], ':')[[1]][1]
+    df <- rbind(df, cbind(n.signif.all[[run.name]]$n.signif, cell.type, n.samples.cutoff))
+  }
+}
+df <- as.data.frame(df)
+colnames(df) <- c('n.signif', 'cell.type', 'n.samples.cutoff')
+df$n.signif <- as.numeric(df$n.signif)
+
+saveRDS(file = output.cacoa.file, object = cao, compress = F)
+saveRDS(file = output.df.file, object = df, compress = F)
+
+
+
+```
+
+
+### Plotting
+```{r, fig.width=8, fig.height=3}
+
+
+p.n.signif <- ggplot(df, aes(x = cell.type, y = n.signif, color = n.samples.cutoff)) + 
+geom_boxplot(outlier.size=0, notch=FALSE) + geom_point(position = position_jitterdodge()) + theme_minimal() + scale_y_log10()
+
+p.n.signif
+
+pdf(paste(path.figures,  dataset.name,
+          '_number_of_significant_genes.pdf', sep = ''), 
+    width = 7, height = 3)
+print(p.n.signif)
+dev.off()
+
+```
+
+
+## Fixation of # of cells per sample
+```{r}
+names.fixed.cells = c('deFixedNumCell100', 'deFixedNumCell50')
+
+if(!(names.fixed.cells[1] %in% names(cao$test.results))){
+  cao$estimateDEPerCellType(max.cell.count=100, min.cell.count = 100, 
+                            name='deFixedNumCell100', resampling.method='loo')  
+  saveRDS(file = output.cacoa.file, object = cao, compress = F)
+}
+
+if(!(names.fixed.cells[2] %in% names(cao$test.results))){
+  cao$estimateDEPerCellType(max.cell.count=50, min.cell.count = 50, 
+                            name='deFixedNumCell50', resampling.method='loo')
+  saveRDS(file = output.cacoa.file, object = cao, compress = F)
+}
+
+
+```
+
+
+## LOO within LOO for DESeq2.Wald
+```{r loo-within-loo}
+test <- 'DESeq2.Wald'
+sample.names <- names(cao$sample.groups)
+f.changes = FALSE
+for(s in sample.names){
+      sample.groups.tmp <- cao$sample.groups
+      sample.groups.tmp <- sample.groups.tmp[!(names(sample.groups.tmp) %in% s)]
+      name.tmp <- paste('remove', s, sep='.')
+      if(name.tmp %in% names(cao$test.results)) next
+      f.changes = TRUE
+      cao$estimateDEPerCellType(test = test, resampling.method = 'loo',
+                                name = name.tmp,
+                                sample.groups = sample.groups.tmp)
+}
+
+if(f.changes) saveRDS(file = output.cacoa.file, object = cao, compress = F)
+
+
+# summarize new "p-values"
+
+
+summ.resamplings <- list(initial=cao$test.results$DESeq2.Wald.loo$initial)
+cell.types <- names(summ.resamplings$initial)
+
+
+for(s in sample.names){
+  name.tmp <- paste('remove', s, sep='.')
+  print(name.tmp)
+  res.tmp <-cao$test.results[[name.tmp]]$initial
+  for(cell.type in names(res.tmp)){
+    stab.sum.rank = rep(0, nrow(res.tmp[[cell.type]]$res))
+    if(length(stab.sum.rank) == 0) next
+    g = rownames(res.tmp[[cell.type]]$res)
+    for(smpl in setdiff(names(cao$test.results[[name.tmp]]), 'initial')){
+      if(is.null(cao$test.results[[name.tmp]][[smpl]][[cell.type]])) next
+      stab.sum.rank = stab.sum.rank + 
+        rank(cao$test.results[[name.tmp]][[smpl]][[cell.type]][g, 'pvalue'])
+    }
+    res.tmp[[cell.type]]$res$pvalue <- stab.sum.rank
+    res.tmp[[cell.type]] = res.tmp[[cell.type]]$res
+  }
+  summ.resamplings[[s]] <- res.tmp
+} 
+cao$test.results[['loo.within.loo']] <- summ.resamplings
+```
+
+
+## Covariates (MS dataset only)
+```{r}
+# 
+# if((dataset.name == 'MS') & !('DESeq2.Wald.PMI' %in% names(cao$test.results) )){
+#   ms.cov <- read.table('/d0/home/aigolkina/coda/cacoa-examples/report/ms_covariate.csv', 
+#                       sep = ',', header = 1)
+#   rownames(ms.cov) <- ms.cov[,1]
+#   
+#   
+#   sample_metadata <- "/d0/home/aigolkina/coda/cacoa-examples/report/ms_metadata.csv" %>%
+#     read.table(sep = ',', header = 1) %>% mutate(sample=substr(.$cell, 20, 100)) %>% split(.$sample) %>%
+#     lapply(`[`, 1,) %>% do.call(rbind, .) %>% .[,5:14]
+#   # sample_metadata %<>% lapply(setNames, .$sample)
+#   sample_metadata <- as.data.frame(sample_metadata)
+#   rownames(sample_metadata) <- sample_metadata$sample
+#   
+#   ms.cov$batch = sample_metadata[rownames(ms.cov), 'Seqbatch'] %in% c('SEQ1', 'SEQ3')
+#   ms.cov$disease <- sample_metadata[rownames(ms.cov), 'diagnosis'] %in% c('MS')
+# 
+#   cao$estimateDEPerCellType(independent.filtering=TRUE, test='DESeq2.Wald',
+#                           covariates = ms.cov[names(cao$sample.groups),'batch', drop=F],
+#                           name='DESeq2.Wald.batch', resampling.method = 'loo')
+#   
+#   # cao$estimateDEPerCellType(independent.filtering=TRUE, test='DESeq2.Wald',
+#   #                         name='xxx', resampling.method = 'loo', n.cores=1)
+# 
+#   cao$estimateDEPerCellType(independent.filtering=TRUE, test='DESeq2.Wald',
+#                           covariates = ms.cov[names(cao$sample.groups),'PMI', drop=F],
+#                           name='DESeq2.Wald.PMI', resampling.method = 'loo')
+#   
+#   cao$estimateDEPerCellType(independent.filtering=TRUE, test='DESeq2.Wald', max.resamplings = 1,
+#                           covariates = ms.cov[names(cao$sample.groups),'Age', drop=F],
+#                           name='DESeq2.Wald.Age', resampling.method = 'loo')
+#   
+#   cao$estimateDEPerCellType(independent.filtering=TRUE, test='DESeq2.Wald', max.resamplings = 1,
+#                           covariates = ms.cov[names(cao$sample.groups),'Sex', drop=F],
+#                           name='DESeq2.Wald.Sex', resampling.method = 'loo')
+#   
+#   cao$estimateDEPerCellType(independent.filtering=TRUE, test='DESeq2.Wald', max.resamplings = 1,
+#                           covariates = ms.cov[names(cao$sample.groups),'RIN', drop=F],
+#                           name='DESeq2.Wald.RIN', resampling.method = 'loo')
+#   
+#   cao$estimateDEPerCellType(independent.filtering=TRUE, test='DESeq2.Wald', max.resamplings = 1,
+#                           covariates = ms.cov[names(cao$sample.groups),c('RIN', 'PMI', 'Age', 'Sex'), drop=F],
+#                           name='DESeq2.Wald.all.cov', resampling.method = 'loo')
+# 
+#   cao$estimateDEPerCellType(independent.filtering=TRUE, test='DESeq2.Wald', max.resamplings = 1,
+#                             name = 'de')
+#   
+#   saveRDS(file = output.cacoa.de.file.de, object = cao, compress = F)
+# }
+
+
+```
+
+
+
+# DE Stability plots
+## p-values: shuffling groups. Each line - cell type
+```{r, fig.width = 2.5, fig.height = 3}
+shuffle.pref <- 'de.shuffling'
+# n.shullfe <- 30
+n.shullfe <- 100
+if(!(paste0(shuffle.pref, 'edgeR', 1, collapse = '')) %in% names(cao$test.results)){
+  for(i in 1:n.shullfe) {
+    print(i)
+    set.seed(i+239)
+    sample.groups.shuffling <- sample(cao$sample.groups)
+    names(sample.groups.shuffling) <- names(cao$sample.groups)
+    print(sample.groups.shuffling)
+    for(test in c('DESeq2', 'edgeR', 'Wilcoxon.DESeq2')){
+    # for(test in c('edgeR')){
+      name <- paste0(shuffle.pref, test, i, collapse = '')
+      cao$estimateDEPerCellType(name = name, 
+                                sample.groups = sample.groups.shuffling, test = test,
+                                n.cores=80)  
+    }
+  }
+  saveRDS(file = output.cacoa.file, object = cao, compress = F)
+}
+
+p.val.steps = exp(seq(-6, 0, by = 0.1) * log(10))
+df.summary.tests <- c()
+for(test in c('DESeq2', 'Wilcoxon.DESeq2',  'edgeR')){
+  print(test)
+# for(test in c( 'edgeR')){
+  df <- c()
+  for(i in 1:n.shullfe) {
+    print(i)
+    name <- paste0(shuffle.pref, test, i, collapse = '')
+    for(cell.type in names(cao$test.results[[name]]$initial)){
+      pval.cell.type = cao$test.results[[name]]$initial[[cell.type]]$res$pvalue
+      n.res.cell.type = length(pval.cell.type)
+      
+      tmp <- sapply(p.val.steps, function(p) { return(sum(pval.cell.type < p))})
+      
+      df.tmp <- data.frame(cell.type = cell.type, 
+                           pval = p.val.steps, 
+                           frac = tmp / n.res.cell.type,
+                           exp.num = p.val.steps * n.res.cell.type,
+                           num=tmp)
+      df <- rbind(df, df.tmp)
+
+    }
+  }
+  df = df[df$num > 1, ]
+  # get mean values across sufflings
+  df.summary <- df %>% group_by(interaction(cell.type, pval)) %>%
+    summarize(frac.mean = mean(frac), frac.med = median(frac), num.med = median(num), 
+              cell.type = cell.type[1], pval = pval[1])
+  df.summary$ratio.mean = df.summary$frac.mean / df.summary$pval
+  df.summary$ratio.med = df.summary$frac.med / df.summary$pval
+  df.summary[df.summary == 0] <- NA
+  df.summary$num.ceil <- as.factor(ceiling(log(df.summary$num.med, base=10)))
+  df.summary$num.floor <- as.factor(floor(log(df.summary$num.med, base=10)))
+  df.summary$test <- test
+  
+  
+  df.summary <- df.summary[!is.na(df.summary$ratio.med),]
+  
+  df.summary.tests <- rbind(df.summary.tests, df.summary)
+}
+
+# p.median.horiz <- ggplot(df.summary.tests, aes(x = pval, y = ratio.med, colour = num.med, group = cell.type))
+
+df.summary.tests$test[df.summary.tests$test == 'Wilcoxon.DESeq2'] = 'Wilcoxon'
+
+p.median.horiz <- ggplot(df.summary.tests[df.summary.tests$num.ceil != 0,], 
+                         aes(x = pval, y = ratio.mean, colour = num.ceil, group = cell.type))+ 
+  geom_line(alpha=0.5) + 
+  # geom_point(alpha=0.5) +
+  cao$plot.theme +
+  # theme(legend.title = element_blank()) +
+  
+  scale_x_continuous(trans='log10', limits = c(10^-4, 1),
+                     breaks = c(10^-4, 10^-3, 10^-2, 10^-1, 1), 
+                     labels=c('1e-4', '1e-3', '1e-2', '1e-1', 1)) +
+  scale_y_continuous(trans='log10', breaks = c(10^-1, 0, 10^1)) + geom_hline(yintercept=1, linetype="dashed", 
+                color = "black") + xlab('p-value cutoff') + ylab('Mean of observed/expected') +
+  guides(color=guide_legend(ncol=4, title.position = "top", title.vjust = 1))  + 
+  theme(legend.position="bottom", legend.title=element_text(size=7), 
+    legend.text=element_text(size=6)) +
+  scale_color_discrete(name = "Round log10 # DE genes") +
+  # scale_color_manual(labels = c(">10", ">100", ">1e3", '>1e4', '>1e5'), values = c(1, 2, 3, 4, 5))+
+  scale_color_viridis(discrete = TRUE, name = "Num. of DE genes",
+                      labels = c(">10", ">100", ">1000", '>10000'), breaks = c(1, 2, 3, 4)) +
+  facet_grid(rows = vars(test)) + theme(strip.background = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA)) +
+  coord_cartesian(ylim = c(10^-2,10^2), expand=0)
+
+
+
+p.median.horiz 
+
+pdf(paste(path.figures,  dataset.name,
+          '_p_values_shuffling_groups_median_all2.pdf', sep = ''),
+    width = 2.2, height = 3)
+print(p.median.horiz)
+dev.off()
+```
+
+```{r, fig.width = 6, fig.height = 3}
+p.median.horiz <- ggplot(df.summary.tests[df.summary.tests$num.ceil != 0,], 
+                         aes(x = pval, y = ratio.mean, colour = num.ceil, group = cell.type))+ 
+  geom_line(alpha=0.5) + 
+  # geom_point(alpha=0.5) +
+  cao$plot.theme +
+  # theme(legend.title = element_blank()) +
+  
+  scale_x_continuous(trans='log10', limits = c(10^-4, 1),
+                     breaks = c(10^-4, 10^-3, 10^-2, 10^-1, 1), 
+                     labels=c('1e-4', '1e-3', '1e-2', '1e-1', 1)) +
+  scale_y_continuous(trans='log10', breaks = c(10^-1, 0, 10^1)) + geom_hline(yintercept=1, linetype="dashed", 
+                color = "black") + xlab('p-value cutoff') + ylab('Mean of observed/expected') +
+  guides(color=guide_legend(ncol=4, title.position = "top", title.vjust = 1))  + 
+  theme(legend.position="bottom", legend.title=element_text(size=7), 
+    legend.text=element_text(size=6)) +
+  scale_color_discrete(name = "Round log10 # DE genes") +
+  # scale_color_manual(labels = c(">10", ">100", ">1e3", '>1e4', '>1e5'), values = c(1, 2, 3, 4, 5))+
+  scale_color_viridis(discrete = TRUE, name = "Num. of DE genes",
+                      labels = c(">10", ">100", ">1000", '>10000'), breaks = c(1, 2, 3, 4)) +
+  facet_grid(cols = vars(test)) + theme(strip.background = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA)) +
+  coord_cartesian(ylim = c(10^-2,10^2), expand=0)
+
+
+p.median.horiz 
+
+
+pdf(paste(path.figures,  dataset.name,
+          '_p_values_shuffling_groups_median_all2_horiz.pdf', sep = ''),
+    width = 6, height = 3)
+print(p.median.horiz)
+dev.off()
+```
+
+
+
+```{r, fig.width = 5, fig.height = 5}
+
+
+
+
+
+
+# 
+# saveRDS(df.summary, paste(path.figures,  dataset.name,
+#           '_p_values_shuffling_groups_median_', test, '.rds', sep = ''))
+
+```
+
+
+## Stability of cell types (one DE method is used)
+```{r, fig.width=4, fig.height=3}
+cao$estimateDEStabilityPerCellType(top.n.genes = top.n.genes,
+                                   de.name = test.name,
+                                   name = 'de.stab.filt', )
+
+# cao$estimateDEStabilityPerCellType(top.n.genes = top.n.genes,
+#                                    de.name = name.de.nofilt, 
+#                                    name = 'de.stab.nofilt')
+# 
+# cao$plotDEStabilityPerCellType(sort.order = T, name = 'de.stab.nofilt')  + 
+#   ylim(0.1, 0.8)
+
+p <- cao$plotDEStabilityPerCellType(name = 'de.stab.filt', notch = T, set.fill = F) 
+p 
+
+```
+
+
+```{r, fig.width=4, fig.height=3}
+pdf(paste(path.figures,  dataset.name,
+          '_stab_per_cell_types.pdf', sep = ''), 
+    width = 4, height = 2.7) 
+print(p)
+dev.off()
+
+```
+
+
+
+## Trend: One DE method and Different thresholds
+### N top genes
+```{r, fig.width=4, fig.height=3}
+
+
+cao$estimateDEStabilityTrend(de.name = test.name, 
+                             top.n.genes = c(top.n.cutoffs),
+                             name = 'de.stab.trend.topn')
+p <- cao$plotDEStabilityTrend(name = 'de.stab.trend.topn', jitter.alpha = 0.1) + xlab('Top N genes') +
+   scale_fill_viridis(discrete = TRUE) 
+p 
+
+pdf(paste(path.figures,  dataset.name, '_trend_top_n.pdf', sep = ''), 
+    width = 4, height = 3) 
+print(p)
+dev.off()
+
+```
+
+###p-values
+```{r, fig.width=1.8, fig.height=3}
+cao$estimateDEStabilityTrend(de.name = test.name, p.val.cutoffs = p.val.cutoffs,
+                             name = 'de.stab.trend.pval') 
+p <- cao$plotDEStabilityTrend(name = 'de.stab.trend.pval', jitter.alpha = 0.5) + xlab('p-value cutoffs') +
+   scale_fill_viridis(discrete = TRUE) 
+p
+
+pdf(paste(path.figures,  dataset.name, '_trend_pval.pdf', sep = ''),
+    width = 1.8, height = 3)
+print(p)
+dev.off()
+
+```
+
+
+## Stability per gene
+### Smooth "per gene" stability
+```{r, fig.width=5.2, fig.height=3}
+
+plot.list <- list()
+for(t.n.genes in c(100, 200, 500, 1000)){
+  plot.list[[length(plot.list) + 1]] <- cao$estimateDEStabilityPerGene(de.name = test.name, 
+                                                         visualize=T, top.n.genes = t.n.genes) +
+    ggtitle(paste0(c('Top', t.n.genes, 'genes'), collapse = ' ')) 
+}
+
+cao$est
+
+# ggarrange(plots=plot.list, nrow=2)
+p <- plot.list[[1]]
+p
+
+# pdf(paste(path.figures,  dataset.name, '_per_gene_smooth.pdf', sep = ''), 
+#     width = 5.2, height = 3) 
+# print(p)
+# dev.off()
+```
+### Rank-based stability
+```{r}
+
+# Variance of rank: LOO
+cell.type = levels(cao$cell.groups)[1]
+cao$plotDEStabilityPerGene(name = test.name,
+                       cell.type = example.cell.type,
+                       stability.score = 'stab.var.rank')
+
+# # Median rank: bootstrap
+# cao$plotDEStabilityPerGene(name = test.name.bo,
+#                        cell.type = example.cell.type,
+#                        stability.score = 'stab.median.rank')
+
+# Median rank: LOO
+cao$plotDEStabilityPerGene(name = test.name,
+                       cell.type = example.cell.type,
+                       stability.score = 'stab.median.rank')
+```
+
+
+
+### Stability of genes on Volcano
+```{r, fig.height=5, fig.width=5}
+
+# cao$estimateDEStabilityPerGene(de.name = test.name, visualize = F)
+# cao$plotVolcano(name = test.name, color.var = 'Stability')
+
+
+```
+
+
+# Update cacoa object 
+```{r}
+suppressMessages(devtools::load_all("/home/aigolkina/coda/cacoa/"))
+cao <- Cacoa$new(cao)
+```
+
+
+
+## Stability for different tests
+Methods are sorted by means
+```{r, fig.width=8, fig.height=4}
+tests.for.stability = c("DESeq2.Wald.loo", "DESeq2.LRT.loo", "edgeR.loo", "Wilcoxon.DESeq2.loo",
+                        "t-test.DESeq2.loo", "limma-voom.loo", "loo.within.loo" ,
+                        'ga.IN-PV_res8_ms_cells_')
+                        # 'ga.Macrophages:1')
+names.for.stability = c("DESeq2-Wald", "DESeq2-LRT", "edgeR", "Wilcoxon test",
+                        "t-test", "limma-voom", "LOO: DESeq2", 'Genetic Algorithm')
+names(names.for.stability) <- tests.for.stability
+colors.for.stability <- c('#C2B8A3', '#A19882', '#8FC1D4', '#C9CCD5', '#B97A95', '#FFE3E3', '#B24080')
+names(colors.for.stability) <- c("t-test.DESeq2.loo", "Wilcoxon.DESeq2.loo", "limma-voom.loo",  "edgeR.loo",
+                                 "DESeq2.Wald.loo", "DESeq2.LRT.loo",  "loo.within.loo")
+
+
+plot.list <- list()
+jacc.all <- c()
+# for(t.n.genes in c(100, 250, 500)){
+for(t.n.genes in c(100)){
+  # cao$estimateDEStabilityPerTest(de.names = c(test.names.loo, name.de.nofilt, 
+  #                                             'DESeq2.Wald.PMI', 'DESeq2.Wald.Age',
+  #                                             'DESeq2.Wald.Sex', 'DESeq2.Wald.RIN',
+  #                                             'DESeq2.Wald.all.cov', 'deFixedMaxNumCell',
+  #                                             'deFixedNumCell100'),
+  #                                top.n.genes = t.n.genes)
+  
+  cao$estimateDEStabilityPerTest(de.names = tests.for.stability,
+                                 top.n.genes = t.n.genes)
+
+  jacc.all <- rbind(jacc.all, cbind(cao$test.results$jacc.per.test, t.n.genes))
+  
+  p1 <- cao$plotDEStabilityPerTest(sort.order = T) + ggtitle(paste('Top', t.n.genes, 'genes'))
+  plot.list[[length(plot.list) + 1]] <- p1 + scale_x_discrete(labels = names.for.stability) +
+     scale_fill_manual(values = colors.for.stability)
+}
+
+p.val.cutoff = 0.05
+cao$estimateDEStabilityPerTest(de.names = setdiff(tests.for.stability, c('Wilcoxon.DESeq2.loo', 'ga.IN-PV_res8_ms_cells_', 'loo.within.loo')),
+                               p.val.cutoff = p.val.cutoff, name = 'jacc.per.test.pval')
+
+plot.list[[length(plot.list) + 1]] <- 
+  cao$plotDEStabilityPerTest(sort.order = T, name = 'jacc.per.test.pval') + 
+  ggtitle(paste('P.adj cutoff', p.val.cutoff)) + scale_x_discrete(labels = names.for.stability) +
+  scale_fill_manual(values = colors.for.stability)
+
+p <- ggarrange(plots=plot.list[c(1, length(plot.list))], ncol=2)
+
+p
+# pdf(paste(path.figures,  dataset.name, '_tests_cutoffs.pdf', sep = ''),
+#     width = 8, height = 4)
+# print(p)
+# dev.off()
+
+
+```
+
+
+
+
+
+### Saving
+```{r, fig.width=8, fig.height=4}
+p1.ntop = plot.list[[1]]
+p1.pval = plot.list[[length(plot.list)]]
+
+
+# saveRDS(p1.ntop, paste(path.figures,  dataset.name, '_tests_cutoffs_100top.rds', sep = ''), compress = F)
+# saveRDS(p1.pval, paste(path.figures,  dataset.name, '_tests_cutoffs_pval.rds', sep = ''), compress = F)
+
+# plot.list[[1]] 
+
+
+pdf(paste(path.figures,  dataset.name, '_tests_cutoffs_100top.pdf', sep = ''),
+    width = 5, height = 4)
+print(p1.ntop)
+dev.off()
+
+
+pdf(paste(path.figures,  dataset.name, '_tests_cutoffs_pval.pdf', sep = ''),
+    width = 2.5, height = 4)
+print(p1.pval)
+dev.off()
+
+```
+
+Means
+```{r, fig.width=5, fig.height=3.5}
+jacc.all.m <- jacc.all %>% group_by(interaction(group, t.n.genes) ) %>%
+  summarize(m = mean(value), group = group[1], t.n.genes = t.n.genes[1])
+
+pl <- ggplot(jacc.all.m, aes(group, m, color = as.factor(t.n.genes), 
+                                group = as.factor(t.n.genes) )) + geom_line()  + theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + labs(color = 'top N genes') +
+  ylab('Mean Jaccard index') + xlab('')
+pl
+```
+
+Medians
+```{r, fig.width=5, fig.height=3.5}
+jacc.all.m <- jacc.all %>% group_by(interaction(group, t.n.genes)) %>%
+  summarize(median = median(value), group = group[1], t.n.genes = t.n.genes[1])
+
+pl <- ggplot(jacc.all.m, aes(group, median, color = as.factor(t.n.genes), 
+                                group = as.factor(t.n.genes) )) + geom_line()  + theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + labs(color = 'top N genes') +
+  ylab('Median Jaccard index') + xlab('')
+pl
+```
+
+
+## Stability across datasets
+```{r, fig.width=5, fig.height=3.5}
+test.jac <- sapply(unique(cao$test.results$jacc.per.test$group), 
+       function(s){
+         mean(cao$test.results$jacc.per.test$value[cao$test.results$jacc.per.test$group == s])
+       })
+test.jac
+
+test.jac.log <- read.table(methods.cmp.file)
+test.jac.log <- test.jac.log[test.jac.log$V1 != dataset.name,]
+test.jac.log = rbind(test.jac.log, 
+                     data.frame(V1=dataset.name,
+                                V2=names(test.jac),
+                                V3=test.jac) )
+
+
+write.table(x = test.jac.log, 
+            file = methods.cmp.file,
+            quote = F, col.names = F, row.names = F)
+
+```
+
+
+```{r, fig.width=5, fig.height=4}
+test.jac.log <- read.table(methods.cmp.file)
+# test.jac.log <- unique(test.jac.log)
+
+tests.for.stability = c("DESeq2.Wald.loo", "DESeq2.LRT.loo", "edgeR.loo", "Wilcoxon.DESeq2.loo",
+                        "t-test.DESeq2.loo", "limma-voom.loo", "loo.within.loo")
+names.for.stability = c("DESeq2-Wald", "DESeq2-LRT", "edgeR", "Wilcoxon test",
+                        "t-test", "limma-voom", "LOO: DESeq2")
+names(names.for.stability) <- tests.for.stability
+
+
+test.jac.log <- test.jac.log[test.jac.log$V2 %in% tests.for.stability, ]
+
+datasets.cols <- c('#e45414', '#efa66c', '#7a2413', '#38A3A5', '#1E5128', '#4E9F3D')
+
+
+test.jac.log = test.jac.log[test.jac.log$V1 != 'hc',]
+test.jac.log = test.jac.log[rowSums(is.na(test.jac.log)) == 0,]
+
+p <- ggplot(test.jac.log, aes(reorder(V2, V3), V3, group = V2 )) + 
+  # geom_boxplot(notch = F, outlier.shape = NA) + theme_minimal() +
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab('Mean Jaccard index') + xlab('') + theme(legend.position = "right") + 
+  theme(plot.title = element_text(size = 10)) + 
+  # geom_jitter(aes(color = V1), width = 0.2) + 
+  labs(color='Datasets') +
+  geom_line(aes(color = V1, group=V1), width = 0.2) +
+  geom_point(aes(x = V2, y=V3, color = V1)) +
+  scale_color_manual(values = datasets.cols,
+                     labels = c("Epilepsy", "Autism", "Alzheimer", 'MS', 'SCC', 'PF'), 
+                     breaks = c("ep", "autism", "alzheimer1", 'ms', 'scc', 'pf')) + 
+  scale_x_discrete(labels = names.for.stability)
+
+
+  
+p
+```
+
+
+```{r, fig.width=5, fig.height=3.5}
+pdf(paste(path.figures,  dataset.name, '_tests_datasets.pdf', sep = ''), 
+    width = 4, height = 3) 
+print(p)
+dev.off()
+
+```
+
+
+
+## Stability between tests
+```{r, fig.width=6, fig.height=6}
+# cao$estimateDEStabilityBetweenTests(de.names = c(test.names.loo, name.de.nofilt),
+#                                     top.n.genes = top.n.genes)
+
+cao$estimateDEStabilityBetweenTests(de.names = c(possible.tests.loo, 'ga.OPC_res8_ms_cells_', 'tmp.tmp'),
+                                    top.n.genes = top.n.genes)
+
+# cao$estimateDEStabilityBetweenTests(de.names = test.names.loo,
+#                                     top.n.genes = top.n.genes)
+
+p <- cao$plotDEStabilityBetweenTests() 
+p
+
+pdf(paste(path.figures,  dataset.name, '_tests_between.pdf', sep = ''), 
+    width = 6, height = 6) 
+print(p)
+dev.off()
+
+```
+
+# Update cacoa object 
+```{r}
+suppressMessages(devtools::load_all("/home/aigolkina/coda/cacoa/"))
+cao <- Cacoa$new(cao)
+```
+
+
+
+# GO calculations
+## ORA: over-representation analysis
+
+```{r gsea, message=FALSE, warning=FALSE}
+
+test.enrichment = 'DESeq2.Wald.loo'
+calc.mode = 'go'
+
+test.enrichment.tmp = paste(test.enrichment, calc.mode, sep='.')
+cao$test.results[[test.enrichment.tmp]] = cao$test.results[[test.enrichment]]
+test.enrichment = test.enrichment.tmp
+
+if(calc.mode %in% c('go')) {  # if
+
+  org <- org.Hs.eg.db
+  cao$getGOEnvironment(org.db = org)
+
+  # for(top.tresh in top.threshols.go) {
+  for(top.tresh in c(250,500,1000,2000)) {
+    print(top.tresh)    
+    go.pref = paste('go', test.enrichment, top.tresh, sep = '.')
+
+  
+    pref = paste(go.pref, 'init', sep = '.')
+    cao$estimateOntology(type = 'GO', org.db=org, de.name = test.enrichment, name = pref,
+                         n.top.genes = top.tresh)
+  
+    # Save initial values of DE analysis
+    cao$test.results[[test.enrichment]]$save.init <- cao$test.results[[test.enrichment]]$initial
+  
+    # Names of resamplings
+    prefs.resampling <- setdiff(names(cao$test.results[[test.enrichment]]), c('initial', 'save.init'))
+    prefs.done = names(cao$test.results)
+    print(prefs.resampling)
+  
+    # This loop is required due to the "random" Error:
+    # for(irep in 1:4){
+    
+
+    # res <- plapply(prefs.resampling, function(pref.subs) {  # Parallel by resamplings
+    res = list()
+    for(pref.subs in prefs.resampling){
+      print(pref.subs)
+      
+      # for(pref.subs in prefs.resampling) {
+      pref.subs.res <- paste(calc.mode, pref.subs, sep = '.')
+    
+    
+      # Replace values for each resampling
+      cao$test.results[[test.enrichment]]$initial = list()
+      for(cell.type in names(cao$test.results[[test.enrichment]][[pref.subs]])){
+        cao$test.results[[test.enrichment]]$initial[[cell.type]]$res <-
+          cao$test.results[[test.enrichment]][[pref.subs]][[cell.type]]
+        # Add column Gene
+        cao$test.results[[test.enrichment]]$initial[[cell.type]]$res$Gene <-
+          rownames(cao$test.results[[test.enrichment]]$initial[[cell.type]]$res)
+      }
+      res[[pref.subs]] <- cao$estimateOntology(type = 'GO', org.db=org, de.name = test.enrichment,
+                           name = pref.subs.res, n.top.genes = top.tresh)
+
+      # return(cao$test.results[[pref.subs.res]])
+    }
+    # }, n.cores=30, progress=TRUE)
+
+    # names(res) <- prefs.resampling
+    
+    pref.resampling = paste(go.pref, 'res', sep = '.')
+    res[['initial']] = cao$test.results$go.DESeq2.Wald.loo.go.100.init
+    cao$test.results[[pref.resampling]] = res
+
+  
+    # Return initial values back
+    
+    cao$test.results[[test.enrichment]]$initial <- cao$test.results[[test.enrichment]]$save.init
+  
+    saveRDS(object = cao, file = output.cacoa.file, compress = F)
+    
+  }
+}
+
+```
+
+## GSEA calculation
+```{r}
+
+test.enrichment = 'DESeq2.Wald.loo'
+calc.mode = 'gsea'
+
+test.enrichment.tmp = paste(test.enrichment, calc.mode, sep='.')
+cao$test.results[[test.enrichment.tmp]] = cao$test.results[[test.enrichment]]
+test.enrichment = test.enrichment.tmp
+
+if(calc.mode %in% c('gsea')) {  # if
+
+  org <- org.Hs.eg.db
+  cao$getGOEnvironment(org.db = org)
+
+  go.pref = paste('gsea', test.enrichment, sep = '.')
+
+  pref = paste(go.pref, 'init', sep = '.')
+  cao$estimateOntology(type = 'GSEA', org.db=org, de.name = test.enrichment, name = pref)
+
+  # Save initial values of DE analysis
+  cao$test.results[[test.enrichment]]$save.init <- cao$test.results[[test.enrichment]]$initial
+
+  # Names of resamplings
+  prefs.resampling <- setdiff(names(cao$test.results[[test.enrichment]]), c('initial', 'save.init'))
+  prefs.done = names(cao$test.results)
+  print(prefs.resampling)
+
+  # This loop is required due to the "random" Error:
+  # for(irep in 1:4){
+  
+  # res <- plapply(prefs.resampling, function(pref.subs) {  # Parallel by resamplings
+  res = list()
+  for(pref.subs in prefs.resampling){
+    print(pref.subs)
+    
+    # for(pref.subs in prefs.resampling) {
+    pref.subs.res <- paste(calc.mode, pref.subs, sep = '.')
+  
+  
+    # Replace values for each resampling
+    cao$test.results[[test.enrichment]]$initial = list()
+    for(cell.type in names(cao$test.results[[test.enrichment]][[pref.subs]])){
+      cao$test.results[[test.enrichment]]$initial[[cell.type]]$res <-
+        cao$test.results[[test.enrichment]][[pref.subs]][[cell.type]]
+      # Add column Gene
+      cao$test.results[[test.enrichment]]$initial[[cell.type]]$res$Gene <-
+        rownames(cao$test.results[[test.enrichment]]$initial[[cell.type]]$res)
+    }
+    res[[pref.subs]] <- cao$estimateOntology(type = 'GSEA', org.db=org, de.name = test.enrichment,
+                         name = pref.subs.res)
+
+    # return(cao$test.results[[pref.subs.res]])
+  }
+  # }, n.cores=30, progress=TRUE)
+
+  # names(res) <- prefs.resampling
+  
+  pref.resampling = paste(go.pref, 'res', sep = '.')
+  res[['initial']] = cao$test.results[[pref]]
+  cao$test.results[[pref.resampling]] = res
+
+
+  # Return initial values back
+  
+  cao$test.results[[test.enrichment]]$initial <- cao$test.results[[test.enrichment]]$save.init
+
+  saveRDS(object = cao, file = output.cacoa.file, compress = F)
+
+}
+
+
+```
+
+# Update cacoa object 
+```{r}
+suppressMessages(devtools::load_all("/home/aigolkina/coda/cacoa/"))
+cao <- Cacoa$new(cao)
+```
+
+
+
+
+# Go Stability plots
+## ORA
+```{r, fig.height=13, fig.width=6}
+
+test.name = "DESeq2.Wald.loo"
+plot.list <- list()
+go.median <- c()
+for(t.n.genes in top.threshols.go){
+  go.result = paste('go', test.name, 'go', t.n.genes , 'res', sep = '.')
+  cao$estimateGOStabilityPerCellTypePerm(go.result = go.result, padj.go = 0.05)
+  
+  tmp <- cao$test.results$go.jaccards %>% group_by(group) %>% 
+    summarize(median = mean(value, ), group = group[1])
+  
+  go.median <- rbind(go.median, cbind(tmp, t.n.genes))
+
+}
+
+
+
+```
+
+# GSEA
+```{r}
+
+go.pref = paste('gsea', test.enrichment, sep = '.')
+
+gsea.result = paste('gsea', test.name, 'gsea' , 'res', sep = '.')
+cao$estimateGSEAStabilityPerCellTypePerm2(go.result = gsea.result, padj.go = 0.05)
+
+tmp <- cao$test.results$go.jaccards %>% group_by(group) %>% 
+  summarize(median = mean(value, ), group = group[1])
+
+t.n.genes = 'gsea'
+gsea.median <- cbind(tmp, t.n.genes)
+
+```
+
+
+
+
+
+## Plot GO stability
+```{r, fig.height=3, fig.width=4}
+x_order <- c('100', '250', '500', '1000', '2000', 'gsea')
+
+names.go.stab = c("GO:100", 'GO:250','GO:500','GO:1000','GO:2000', 'GSEA')
+names(names.go.stab) <- x_order
+
+go.colors <- c('#1E5128', '#4E9F3D', '#6ECB63', '#B1E693', '#D8E9A8', '#ED8E7C')
+names(go.colors) <- x_order
+
+p <- ggplot(rbind(go.median, gsea.median), 
+            aes(factor(as.factor(t.n.genes), level = x_order), median, 
+                                group = as.factor(t.n.genes),  fill=as.factor(t.n.genes) )) + 
+  geom_boxplot(notch=F, outlier.shape=NA)  + theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))  + 
+  ylab('Jaccard Index') + geom_jitter(width = 0.2, alpha = 0.5) + xlab('') +
+  theme(legend.position = "none") +
+  scale_fill_manual(values = go.colors) + scale_x_discrete(labels = names.go.stab)  + ggtitle('Ontology stability') + ylim(0, 1)
+p 
+
+pdf(paste(path.figures,  dataset.name, '_go_stab.pdf', sep = ''),
+    width = 3.5, height = 4)
+print(p)
+dev.off()
+```
+
+
