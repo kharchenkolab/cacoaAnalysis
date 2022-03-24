@@ -12,11 +12,15 @@ editor_options:
 
 ### Figures
 
-- [F1: Compositional data analysis, cluster-based](./figure_compositional.html)
-- [F2: Compositional data analysis, cluster-free](./figure_compositional_cf.html)
-- [F3 and S1: Expression change magnitudes, cluster-based](./figure_expression_shifts.html)
-- [F4 and S2: Analysis of sample heterogeneity](./figure_heterogeneity.html)
-- [F5 and S3: Differential Expression analysis](./figure_cluster_based_de_bio.html)
+- [F2: Compositional data analysis, cluster-based](./figure_compositional.html)
+- [F3: Compositional data analysis, cluster-free](./figure_compositional_cf.html)
+- F4, S1,2: Expression changes (cluster-based) and sample heterogeneity
+  - [F4 and S1: Expression change magnitudes, cluster-based](./figure_expression_shifts.html)
+  - [F4 and S2: Analysis of sample heterogeneity](./figure_heterogeneity.html)
+- F5 and S3: Differential Expression analysis
+  - [DE stability](https://github.com/kharchenkolab/cacoaAnalysis/blob/master/analysis/figure_de_stability.Rmd)
+  - [Improving DE stability with the Genetic Algorithm](https://github.com/kharchenkolab/cacoaAnalysis/blob/master/analysis/figure_de_stability_genalg.Rmd)
+  - [DE and GSEA biological analysis](./figure_cluster_based_de_bio.html)
 - [F6 and S4: Gene expression analysis, cluster-free](./figure_cluster_free_expression.html)
 - [F7: Functional interpretation](./figure_interpretation.html)
 
