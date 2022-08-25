@@ -22,6 +22,7 @@ Imports:
     RColorBrewer,
     reticulate,
     sccore,
+    tictoc,
     workflowr
 Suggests:
     mltools,

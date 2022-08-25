@@ -133,3 +133,15 @@ getCellTypeEmbeddingLimits <- function(embedding, cell.groups, groups.to.plot, q
     lapply(function(v) v + c(-1, 1) * diff(v) * quant * 2)
   return(res)
 }
+
+preparePFMetadata <- function(path) {
+  readr::read_csv(path) %>% head(-2) %>%
+    .[,2:10] %>% unique() %>% dplyr::mutate(
+      Gender=replace(Gender, Gender == "Unknown", NA),
+      Ethnicity=replace(Ethnicity, Ethnicity == "Unknown", NA),
+      Tobacco=replace(Tobacco, Tobacco == "Unknown", NA),
+      Age=as.integer(Age),
+      Ethnicity=sapply(strsplit(Ethnicity, " "), `[[`, 1)
+    ) %>% dplyr::arrange(Sample_Name) %>% head(-1) %>%
+    as.data.frame() %>% set_rownames(.$Sample_Name)
+}
