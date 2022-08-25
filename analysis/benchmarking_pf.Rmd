@@ -1,0 +1,257 @@
+---
+title: 'Benchmarking against existing methods on the PF dataset'
+date: "`r Sys.Date()`"
+author: "[Viktor Petukhov](https://github.com/VPetukhov/)"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: '3'
+    toc_float: true
+    df_print: paged
+---
+
+```{r libs, include=FALSE, message=FALSE}
+library(cacoa)
+library(dataorganizer)
+
+library(ggplot2)
+library(dplyr)
+library(cowplot)
+library(Matrix)
+library(dplyr)
+library(magrittr)
+library(readr)
+library(reticulate)
+
+theme_set(theme_bw())
+
+devtools::load_all()
+```
+
+```{r, message=FALSE}
+# virtualenv_create("r-benchmarks")
+# virtualenv_install("r-benchmarks", c("sccoda", "matplotlib"))
+# use_virtualenv("r-scrublet")
+# mpl <- import("matplotlib")
+# mpl$use('Agg') # Otherwise it shows Qt error in RStudio
+```
+
+```{r}
+# library(reticulate)
+## use_python("/home/viktor_petukhov/local/miniconda3/envs/sccoda/bin/python")
+# use_python("/home/viktor_petukhov/.virtualenvs/r-benchmarks/bin/python")
+# # TODO: change path to yours
+```
+
+```{r, message=FALSE, warning=FALSE}
+cao <- read_rds(DataPath("PF/cao.rds")) %>% Cacoa$new()
+cao$sample.groups.palette %<>% .[c(2, 1)]
+cao$plot.params <- list(size=0.1, alpha=0.1, font.size=c(2, 3))
+
+sample_meta <- DataPath("PF/sample_metadata.csv") %>% preparePFMetadata() %>% 
+  .[names(cao$data.object$samples),] %>% 
+  lapply(setNames, .$Sample_Name)
+```
+
+## Compositional differences
+
+### Cluster-based
+
+Cacoa:
+
+```{r}
+cao$plotCellLoadings()
+```
+
+```{r}
+# Other methods don't have trees!
+cao$plotContrastTree()
+```
+
+scCODA:
+
+```{r}
+df <- cao$sample.per.cell %>% table(cao$cell.groups[names(.)]) %>% 
+  set_class("matrix") %>% as.data.frame()
+df$condition <- as.character(cao$sample.groups[rownames(df)])
+py$df <- df
+```
+
+<!-- ```{python} -->
+<!-- from sccoda.util import comp_ana as mod -->
+<!-- from sccoda.util import cell_composition_data as dat -->
+<!-- from sccoda.util import data_visualization as viz -->
+<!-- import pandas as pd -->
+<!-- import matplotlib.pyplot as plt -->
+
+<!-- df["Condition"] = condition -->
+<!-- data_all = dat.from_pandas(df, covariate_columns=["Condition"]) -->
+<!-- data_all.obs["Condition"] -->
+
+<!-- # viz.boxplots(data_all, feature_name="Condition") -->
+<!-- # plt.show() -->
+
+<!-- model = mod.CompositionalAnalysis(data_all, formula="Condition", reference_cell_type="Ciliated") -->
+<!-- sim_results = model.sample_hmc() -->
+<!-- ``` -->
+
+<!-- ```{python} -->
+<!-- sim_results.summary() -->
+<!-- ``` -->
+
+TODO: add processing site covariates
+
+## Toy example
+
+Simulate data:
+
+```{r, message=FALSE}
+n.cell.types <- 7
+cell.types <- paste('type', 1:n.cell.types, sep='')
+
+n.samples <- 20  # number of samples in one group
+groups.name <- c('case', 'control')
+groups.type <- c(rep(groups.name[1], n.samples), rep(groups.name[2], n.samples))
+sample.names <- paste(groups.type, 1:(2*n.samples), sep = '')
+groups <- setNames(groups.type %in% groups.name[1], sample.names)
+
+palette <- RColorBrewer::brewer.pal(n.cell.types, "Set1") %>% setNames(cell.types)
+
+sample_groups <- c("control", "case")[groups + 1] %>% setNames(names(groups))
+
+sg_pal <- c(case="#BF1363", control="#39A6A3")
+```
+
+```{r, fig.width=5, fig.height=3}
+cnt.shift <- 100
+cnt.shift2 <- -15
+
+set.seed(1124)
+
+# cnts <- lapply(1:(2 * n.samples), function(i) round(rnorm(n.cell.types, mean=50, sd=5))) %>% 
+cnts <- lapply(1:(2 * n.samples), function(i) round(rpois(n.cell.types, lambda=50))) %>% 
+  do.call(rbind, .) %>% set_rownames(sample.names) %>% set_colnames(cell.types)
+
+shifts <- c(100, -20, -15, -10, -5)
+# cnts[,1] <- cnts[,1] + groups * cnt.shift
+# cnts[,2:3] <- cnts[,2:3] + groups * cnt.shift2
+# cnts[,3] <- cnts[,3] + groups * cnt.shift2
+
+for (i in 1:5) {
+  cnts[,i] <- cnts[,i] + groups * shifts[i]
+}
+
+
+freqs <- cnts %>% {. / rowSums(.)}
+
+res <- cacoa:::runCoda(cnts, groups, n.seed=239)
+dfs <- cacoa:::estimateCdaSpace(cnts, groups)
+```
+
+```{r}
+df <- as.data.frame(cnts)
+df$condition <- c(rep("control", n.samples), rep("case", n.samples))
+write_csv(df, CachePath("coda_sim_df.csv"))
+CachePath("coda_sim_df.csv")
+```
+
+```{r, fig.width=6, fig.height=5, message=FALSE, warning=FALSE}
+gg_coda <- res %$% cacoa:::plotCellLoadings(
+  loadings, padj, palette=palette, jitter.alpha=0.0,
+  ref.level=groups.name[2], target.level=groups.name[1], 
+  ref.load.level=res$ref.load.level, annotation.x=1.0
+) + theme(
+  panel.border=element_rect(size=0.1, fill="transparent"),
+  panel.grid.minor.x=element_blank()
+)
+
+gg_coda
+```
+
+
+## Test FDR control
+
+Simulate data:
+
+```{r}
+data_folder <- '~/mh/projects/cacoaAnalysis/scCODA_reproducibility/new_data/model_comparison_2/'
+input_folder <- file.path(data_folder, 'generated_datasets_model_comparison_R/')
+data_files <- list.files(input_folder) %>% {setNames(file.path(input_folder, .), .)}
+length(data_files)
+```
+
+```{r}
+setSampleNames <- function(df) {
+  n.samples <- nrow(df) / 2
+  rownames(df) <- c(paste0(rep("c", n.samples), 1:n.samples), paste0(rep("d", n.samples), 1:n.samples))
+  return(df)
+}
+
+getCodaPvals <- function(data.file) {
+  cnts <- read_csv(data.file) %>% as.matrix() %>% setSampleNames()
+  groups <- rownames(cnts) %>% {setNames(startsWith(., "c"), .)}
+  res <- cacoa:::runCoda(cnts, groups, n.seed=239)$padj
+  return(res)
+}
+```
+
+```{r}
+# res <- sccore::plapply(data_files, getCodaPvals, progress=TRUE, n.cores=30)
+res <- data_files %>% 
+  pbmcapply::pbmclapply(getCodaPvals, mc.cores=50, mc.preschedule=TRUE, mc.allow.recursive=TRUE)
+```
+
+```{r}
+
+```
+
+```{r}
+write_rds(res, CachePath("coda_sim_res.rds"))
+```
+
+```{r}
+res <- read_rds(CachePath("coda_sim_res.rds"))
+```
+
+```{r}
+output_path <- file.path(data_folder, 'r_coda_pvals.csv')
+
+lapply(res, function(x) setNames(x[paste(0:15)], paste(0:15))) %>% 
+  as.data.frame() %>% write_csv(output_path)
+```
+
+```{r}
+cnts <- data_files['model_comp_data_new_1_1.csv'] %>% read_csv() %>% 
+  as.matrix() %>% setSampleNames()
+```
+
+```{r}
+res$model_comp_data_new_1_1.csv
+```
+
+
+<!-- ```{r, message=FALSE} -->
+<!-- n.cell.types <- 1000 -->
+<!-- cell.types <- paste('type', 1:n.cell.types, sep='') -->
+
+<!-- n.samples <- 20  # number of samples in one group -->
+<!-- groups.name <- c('case', 'control') -->
+<!-- groups.type <- c(rep(groups.name[1], n.samples), rep(groups.name[2], n.samples)) -->
+<!-- sample.names <- paste(groups.type, 1:(2*n.samples), sep = '') -->
+<!-- groups <- setNames(groups.type %in% groups.name[1], sample.names) -->
+<!-- sample_groups <- c("control", "case")[groups + 1] %>% setNames(names(groups)) -->
+<!-- ``` -->
+
+<!-- ```{r, fig.width=5, fig.height=3} -->
+<!-- set.seed(1124) -->
+
+<!-- cnts <- lapply(1:(2 * n.samples), function(i) round(rnorm(n.cell.types, mean=50, sd=5))) %>%  -->
+<!--   do.call(rbind, .) %>% set_rownames(sample.names) %>% set_colnames(cell.types) -->
+
+<!-- freqs <- cnts %>% {. / rowSums(.)} -->
+
+<!-- res <- cacoa:::runCoda(cnts, groups, n.seed=239) -->
+<!-- dfs <- cacoa:::estimateCdaSpace(cnts, groups) -->
+<!-- ``` -->
+
+
