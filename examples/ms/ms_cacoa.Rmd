@@ -1,0 +1,683 @@
+---
+title: "Cacoa on the multiple sclerosis cortex dataset (Schirmer et al. 2019)"
+author: "Cacoa developers"
+date: "`r Sys.Date()`"
+output:
+  github_document:
+    toc: yes
+params:
+  data.file: ""      # ms_refreshed.rds built by prepare_ms_data.R (the Conos object of the Cacoa preprint + its annotation); empty = do not evaluate
+  meta.file: "/home/viktor_petukhov/projects/cacoaAnalysis/data/MS/meta.txt" # cell metadata, tab-delimited
+  n.cores: 24
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(eval = file.exists(params$data.file), fig.width = 8, fig.height = 4.5, dpi = 110, message = FALSE, warning = TRUE, comment = "")
+```
+
+This notebook runs the Cacoa workflow on the snRNA-seq dataset of Schirmer et al. (Nature 2019): nuclei from
+cortical lesions of multiple sclerosis (MS) patients and from control cortex, 21 samples (12 MS, 9 control) and 46,340
+nuclei after the filtering of the Cacoa preprint (the study's own thresholds plus nuclei with a mitochondrial fraction
+above 0.1 and Scrublet doublets removed). The question is one contrast, **MS versus control**, with the simplest model `~ diagnosis`. The study
+comes with a number of sample-level covariates (brain region, sex, age, capture and sequencing batch, RIN, PMI), and
+several of them are confounded with the diagnosis. They are not put into the model; instead the notebook shows how
+Cacoa exposes their relevance: the design check, the covariate screen, the variance partition, sample maps colored by
+covariates, and a sensitivity analysis of the main result to adjusting for them.
+
+```{r libs}
+library(cacoa)
+library(conos)
+library(ggplot2)
+```
+
+## Load data
+
+`prepare_ms_data.R` (next to this notebook) refreshes the Conos object of the Cacoa preprint (built with an older
+pagoda2/conos version) and stores it with the preprint's annotation. The cell-type annotation of the study is
+condition-specific for two populations (`EN-L2-3-Cntl` / `EN-L2-3-MS` and `OL-Cntl` / `OL-MS-1` / `OL-MS-2`); the
+preprint merged those labels, otherwise the cell types would be aliased with the diagnosis.
+
+```{r load}
+ms <- readRDS(params$data.file)
+con <- ms$con
+cell.groups <- ms$cell.groups
+table(cell.groups)
+```
+
+The sample metadata is derived from the cell metadata table: one row per sample with the diagnosis and every
+sample-level covariate. `stage` (acute/chronic active, chronic inactive, control) refines the diagnosis;
+`lesion_stage` is 0 in every control and a different value in each MS sample, i.e. an index of the MS samples rather
+than a covariate, so it is shown here and then dropped.
+
+```{r sample-meta}
+cell.meta <- read.delim(params$meta.file)
+sample.meta <- unique(cell.meta[, c("sample", "diagnosis", "stage", "age", "sex", "region", "Capbatch", "Seqbatch",
+                                    "RIN", "PMI", "lesion_stage")])
+rownames(sample.meta) <- sample.meta$sample
+sample.meta <- sample.meta[names(con$samples), -1]
+sample.meta
+sample.meta$lesion_stage <- NULL
+```
+
+The rows are put in the order of the Conos samples; this is a tidy-up only, but the row order also fixes the
+permutation set drawn for a given seed.
+
+```{r construct, message=TRUE}
+cao <- Cacoa$new(con, sample.metadata = sample.meta, cell.groups = cell.groups, n.cores = params$n.cores)
+cao$setOptions(n.permutations = 499, seed = 1)
+cao$plot.params <- list(size = 0.2, alpha = 0.2, font.size = 3)
+cao$sample.groups.palette <- c(Control = "#4575b4", MS = "#d73027")
+```
+
+The condition palette is named so that the plots made before the model is set use the same two colors as the ones
+made after it.
+
+```{r embedding, fig.width=11, fig.height=5}
+cowplot::plot_grid(cao$plotEmbedding(color.by = "cell.groups"), cao$plotEmbedding(color.by = "diagnosis"), ncol = 2)
+```
+
+Oligodendrocytes (OL) and the upper-layer excitatory neurons (EN-L2-3) are the largest populations; the MS and
+control nuclei mix within most cell types but occupy different parts of the OL and EN-L2-3 clouds, which is why the
+original annotation split them by condition.
+
+## Check the design
+
+The design check works on the metadata alone: associations between covariates, the balance of each covariate over the
+two arms, and structural problems for a model that would adjust for them.
+
+```{r check-design}
+cao$checkDesign(test = "diagnosis")
+```
+
+```{r plot-design-balance, fig.width=10, fig.height=6}
+cao$plotDesign("balance")
+```
+
+```{r plot-design-assoc, fig.width=6, fig.height=5}
+cao$plotDesign("associations")
+```
+
+The check finds what the study design implies. `stage` is a refinement of the diagnosis (every stage belongs to one
+arm), so it cannot be adjusted for. The batches are nested in the diagnosis: capture batch CAP7 (sequencing batch SEQ5)
+contains only controls, CAP3, CAP4 and CAP6 (SEQ2, SEQ4) only MS samples, and only CAP1, CAP2 and CAP5 contain both
+arms. Controls are older on average (median 54 vs 46 years) and more often from the prefrontal cortex (6 of 9 vs 4 of
+12). Sex, RIN and PMI are only weakly associated with the diagnosis (0.00, 0.24 and 0.14), although the MS samples are more
+often female (8 of 12 vs 4 of 9); the check still warns that 7 of the 12 MS samples have a higher RIN than any control,
+and notes that 2 controls have a PMI outside the range of the MS samples. The check also notes that several covariates are associated with each other (age with
+batch, batch with region, the two batches with each other), so a model with several of them estimates only each one's
+unique contribution.
+
+## Screen covariates
+
+The screen tests every covariate against the sample-to-sample expression distances of each cell type. Cell types with
+fewer than 6 samples are skipped (here `Phagocytes` and `Stromal cells`), and a covariate that is constant
+among a cell type's samples is skipped for that cell type.
+
+```{r screen}
+cao$screenCovariates(n.permutations = 199)
+```
+
+```{r plot-screen, fig.width=9, fig.height=5}
+cao$plotCovariateScreen()
+```
+
+```{r plot-screen-summary, fig.width=8, fig.height=4}
+cao$plotCovariateSummary()
+```
+
+The batches dominate: sequencing and capture batch are associated with expression in 13 and 11 of the 15 screened cell types and explain about 15 and 16 % of the between-sample variation in the median (the summary bars show the median location R2 with
+the number of significant cell types; dispersion associations are reported only as counts, and no covariate has
+one). The diagnosis itself passes the FDR threshold in IN-VIP and OL and in the composition summary column; `stage` tracks it and passes in OL and in the all-cell-types and composition columns. Sex, age, RIN and PMI are not associated with expression in any cell type, and region only in EN-PYR (and with the composition, adj. R2 0.14). Two caveats about the screen on this design:
+with 21 samples and 9 covariates, several with many levels, the partial mode (each covariate adjusted for all
+others) has too few residual degrees of freedom and falls back to the marginal test in every cell type, so the two
+modes coincide here; and the screen flags `stage` and `Seqbatch` as strongly tied to the diagnosis (possible
+over-adjustment) and therefore suggests only `~ diagnosis + Capbatch`, although Capbatch is nested in the diagnosis
+as well (association 0.47, just under the flagging threshold), as the design check said. The variance partition
+shows the same picture for the three covariates of interest: batch first (up to about a quarter of the variation, in
+OL), diagnosis a distant second (at most about 3 %), age close to nothing (about 2 % in microglia).
+
+```{r plot-varpart, fig.width=9, fig.height=4}
+cao$plotVariancePartition(c("diagnosis", "Capbatch", "age"))
+```
+
+### Sample maps
+
+The maps show the samples in two dimensions (MDS of the sample distances) for one cell type, for all cell types combined, or for the cell-type composition; the subtitles give the chance-corrected R² and permutation p-value of each color and shape variable on its own (the screen's marginal mode; the screen's summary lines print the partial mode where the degrees of freedom allow it).
+
+The sample maps make the covariate structure visible without a model. In EN-L2-3 the capture batch explains twice as
+much as the diagnosis (adj. R² 0.16 against 0.08): the CAP1 controls sit together at the right, the CAP7 controls in the
+upper half. Averaged over all cell types, the samples group by sequencing batch rather than by diagnosis (0.17 against 0.04): the SEQ1 samples fill the right and lower part of the map, controls and MS samples apart, while the SEQ2/SEQ4 MS
+samples and the SEQ5 controls share the left half, which is the pattern behind the screen result. The composition follows the sequencing batch even more closely (0.42; diagnosis 0.15): the SEQ5 controls, the SEQ1 samples and the SEQ2
+samples form separate groups.
+
+```{r plot-sample-distances, fig.width=15, fig.height=4}
+cowplot::plot_grid(
+  cao$plotSampleDistances(cell.type = "EN-L2-3", color.by = "Capbatch", shape.by = "diagnosis"),
+  cao$plotSampleDistances(color.by = "diagnosis", shape.by = "Seqbatch"),
+  cao$plotSampleDistances(space = "composition", color.by = "diagnosis", shape.by = "Seqbatch"),
+  ncol = 3)
+```
+
+## Set the model
+
+The model contains only the diagnosis. The reference level is `Control` (matched by name); `shift > 0` means that MS
+samples differ from control samples in a common direction. With two arms of 12 and 9 samples, label permutations are
+exact (block permutations, 293,930 distinct relabelings).
+
+```{r set-model}
+cao$setModel(~ diagnosis, test = "diagnosis")
+```
+
+## Expression shifts per cell type
+
+Two questions are asked per cell type: whether its expression changed, tested gene by gene (the contrast of each
+gene over its standard error, the gene z-scores combined adaptively; `statistic = "gsd"`, permutation p-values adjusted
+across cell types), and how much, from a model of the sample-to-sample distances (`shift`: the distance between the
+arm means relative to the within-arm spread; `var`: the log2 ratio of the arm dispersions at equal cell numbers).
+
+```{r shifts, message=TRUE}
+res <- cao$estimateExpressionShiftMagnitudes()
+res
+```
+
+Cell types are tested in the samples with at least 5 of their nuclei (`n`); the magnitudes come from the samples with at
+least 10 (`n.mag`), because a profile of a handful of nuclei is mostly sampling noise, which shrinks the distance-based
+shift. `Microglia` are tested in 15 samples (they are abundant in the lesions and rare in control cortex); `Phagocytes`
+(one control sample), `Stromal cells` (MS only), T cells and B cells are not.
+
+```{r plot-shifts-full, fig.width=9, fig.height=5.2}
+cao$plotExpressionShiftMagnitudes(show.ci = TRUE, show.genes = TRUE)
+```
+
+Cell types are ordered by the size of the shift; filled points have a significant shift by the gene-level test, the gray
+band is the range of the shift with shuffled labels, the intervals are the jackknife 95 % intervals, and the margin counts
+the genes changed at a gene-level FDR of 10 %. Two of the 15 tested cell types have a significant shift at FDR 5 %, the oligodendrocytes and the microglia (adjusted p 0.045); the gene-level test puts EN-L2-3, IN-VIP, EN-MIX and OPC just above the threshold (0.055) and EN-PYR, EN-L4, EN-L5-6 and the astrocytes at 0.063, and the global p of the shift test is 0.048. By size, EN-PYR leads (0.20), followed by EN-L2-3 (0.18), the oligodendrocytes (0.15) and EN-L4 (0.13), then a group of small shifts: microglia, IN-VIP, EN-L5-6, astrocytes and EN-MIX (0.07-0.10), `Glia-MIX`, IN-SV2C, IN-PV and OPC (0.04-0.05), and IN-SST and the endothelial cells at zero. The largest shifts are not the significant ones: EN-PYR and EN-L2-3 lie outside the range that shuffled labels give (gray band), as do the oligodendrocytes, IN-VIP and the astrocytes, but EN-PYR's magnitude rests on 12 samples and the gene-level test, which decides significance, finds a consistent change in neither at the 5 % level. The shifts are small (normalized shift up to 0.20); of the two significant types the oligodendrocyte estimate lies above the band and the microglial one inside its wide band: the gene-level test detects a consistent change that is small relative to the donor-to-donor spread.
+
+The jackknife intervals say the same: 13 of the 15 intervals include zero, the microglial one among them; only those of EN-PYR and the oligodendrocytes exclude it. The two statements are compatible: the change is consistent in direction across the donors (what
+the permutation test sees), but its size depends on single samples (what the jackknife sees). The genes changed at a gene-level FDR of 10 % are concentrated in EN-L2-3 (371), the oligodendrocytes (271), EN-L4 (201) and IN-VIP (195), with 60 in the microglia and 31 in the astrocytes.
+
+```{r plot-var, fig.width=8, fig.height=4.5}
+cao$plotExpressionShiftMagnitudes(effect = "var")
+```
+
+The dispersion change, compared at equal numbers of nuclei per sample, is positive in most cell types (MS samples more heterogeneous) but significant in none; EN-PYR and the oligodendrocytes come closest (adjusted p 0.15).
+
+The sample-level pictures below show which samples set the size of the shifts.
+
+### Behind one cell type
+
+```{r plot-shift-detail, fig.width=12, fig.height=3.8}
+cao$plotShiftDetail("EN-L2-3")
+```
+
+In EN-L2-3 the between-arm pair distances are larger than the within-arm distances, but the control arm is itself heterogeneous: two control samples have the highest per-sample dispersion of the arm, 5546_BA9 (capture batch CAP7) above all.
+
+```{r plot-influence, fig.width=9, fig.height=5}
+cao$plotSampleInfluence()
+```
+
+<!-- NEW (round 32): the same diagnostics layout as for the composition -->
+```{r shift-fit-diagnostics, fig.width=14, fig.height=6.5}
+cao$plotFitDiagnostics("expression.shifts")
+```
+
+```{r residual-maps, fig.width=15, fig.height=4.5}
+cowplot::plot_grid(cao$plotSampleDistances(values = "residual", color.by = "Seqbatch", shape.by = "diagnosis"),
+                   cao$plotSampleDistances(values = "residual", color.by = "RIN", shape.by = "diagnosis"),
+                   cao$plotSampleDistances(values = "residual", color.by = "region", shape.by = "diagnosis"), ncol = 3)
+```
+
+The residual maps show the samples on the distances that remain once the diagnosis is removed from the profiles
+(`values = "residual"`), colored by variables that are not in the model. The sequencing batch explains 16 % of these
+residual distances (p 0.002), the region 7 % (p 0.012), the RNA integrity nothing (p 0.86): of the three variables
+shown, the sequencing batch explains the largest part of what remains after the diagnosis. The section "The sequencing batch" below asks what this does to the
+results.
+
+<!-- END NEW -->
+
+The influence map makes the dependence explicit: leaving out the control sample 5546_BA9 increases the shift by about
+half a standard error in nearly every cell type (it is a control that looks MS-like in expression), and 5981_BA9 acts
+the same way in the neurons. The MS sample 1_A4 acts the same way in the excitatory neurons (an MS sample that looks
+control-like), while leaving out 2_B9 or 8_H10 lowers the shift slightly in most types; in the microglia, which few control samples carry, two controls (2_B4 and 25G_P3C1) raise the shift most. No single sample creates the effect, but a few samples set its size.
+
+## Robustness to the covariates
+
+The shifts are re-estimated under alternative adjustment sets: unadjusted (the current model), plus each of the top
+screened covariates, and all of them together when the degrees of freedom allow. `stage` is excluded from the candidate
+covariates (aliased with the diagnosis), so each cell type is compared across five models: unadjusted, plus `Seqbatch`, plus `Capbatch`, plus `region`, and all screened covariates together (the two batches add nothing to each other, because every sequencing batch is a union of capture batches). EN-PYR and endothelial cells have too few samples for the batch-adjusted models. Each cell type gets two
+verdicts. The magnitude verdict compares the distance-model estimates across the models and checks the influence of
+single samples (read from the current result); a shift within the noise band of shuffled labels is "near zero", and its
+changes are not judged. The significance verdict counts the models in which the gene-level test, refitted under each
+model, calls the shift (adjusted p < 0.05); filled points in the plot. Each model's estimate carries its jackknife 95 %
+interval and, as a thin line, its range over the leave-one-sample-out refits.
+
+```{r sensitivity}
+cao$checkSensitivity(n.permutations = 199)
+```
+
+```{r plot-sensitivity, fig.width=10, fig.height=7}
+cao$plotSensitivity()
+```
+
+In size, adjusting for either batch does not remove the diagnosis effect; it makes it larger in most cell types: EN-L2-3 goes from 0.18 to about 0.4 and EN-L4 from 0.13 to 0.38, the shifts of EN-L5-6, EN-MIX, IN-VIP, OPC and IN-PV double or more, and that of OL grows from 0.15 to 0.25-0.29, because the batch-adjusted contrast is estimated within the mixed batches (CAP1, CAP2 and CAP5, which make up SEQ1
+and SEQ3), where the MS-control difference is not diluted by the between-batch variation. Taken at face value the batch
+effect masks part of the disease effect rather than producing it.
+
+The significance does not follow the size: with the sequencing batch in the model the gene-level test calls EN-L2-3, EN-L4, OL, IN-VIP and OPC (adjusted p 0.04), not EN-L5-6, EN-MIX, microglia or astrocytes; with the capture batch in the model it calls no cell type (seven types sit exactly at adjusted p 0.05, the others above), with the region OL, IN-VIP, EN-MIX and OPC, and with all screened covariates together none. With batches nested in the diagnosis
+the adjusted contrast rests on the 5 MS and 5 control samples of the mixed batches and on few distinct relabelings, so
+the larger estimate comes with less power.
+
+The magnitude verdicts add that the size depends on single samples: leaving out the control 5546_BA9 changes it markedly in EN-L2-3, IN-VIP and the astrocytes ("driven by one sample"), the MS sample 7_G10 in the oligodendrocytes; EN-PYR is stable, and the other ten types lie within the noise band of shuffled labels. The conclusion that MS cortex differs from control cortex in these
+cell types is robust in direction, not in size. For EN-PYR and the endothelial cells only the unadjusted and the region-adjusted models can be fitted (neither significant). Three glial types go the other way: the microglial shift turns slightly negative once either batch is adjusted for (0.10 to about -0.1), and the astrocyte (0.08 to 0.06) and `Glia-MIX` (0.05 to about -0.02) shifts shrink, so for these the batch structure, not the diagnosis alone, may carry the difference.
+
+## Composition
+
+The compositional analysis tests the same contrast on the cell-type proportions (log-ratios, presented against a
+reference set of cell types that do not change relative to each other).
+
+```{r loadings, fig.width=13, fig.height=6.5}
+cao$estimateCellLoadings()
+cao$plotCellLoadings(center = "both", min.effect = 1.5)
+```
+
+The lines through the points are jackknife 95 % intervals of the loadings (one sample left out at a time); the dotted lines
+mark a 1.5-fold change. The table gives the loadings with their model-based 95 % intervals (`ci.low`, `ci.high`, close to the
+jackknife ones), the number of cells each loading rests on, and how far it moves when the pseudocount is halved or doubled.
+
+```{r loadings-table}
+knitr::kable(codaLoadingsTable(cao$test.results$coda, min.effect = 1.5), digits = 3)
+```
+
+### The samples behind the composition result
+
+```{r coda-samples, fig.width=13, fig.height=8.5}
+cao$plotCodaSamples(n.top = 12)
+```
+
+```{r coda-fit-diagnostics, fig.width=14, fig.height=6.5}
+cao$plotFitDiagnostics("composition")
+```
+
+The samples' proportions of the 12 cell types with the smallest adjusted p-values, with the fitted proportion of each
+condition (gray box): the changes are carried by most samples of each condition rather than by a few. One MS sample
+stands out: `4_D9` has no cells of the upper-layer excitatory neurons `EN-L2-3` and `EN-L4` (open circles, drawn at the
+pseudocount) and the largest IN-SST proportion of all samples. The fit diagnostics show the same sample from the side
+of the model: it has the three studentized residuals beyond 3 (`EN-L2-3`, `EN-L4`, IN-SST) and moves the `EN-L2-3` and
+`EN-L4` loadings by about one standard error when left out; one other residual beyond 3 is `8_H10` in the B cells. The
+model without `4_D9` is fitted below.
+
+### Composition with a random intercept for the sequencing batch
+
+```{r loadings-random-batch, fig.width=13, fig.height=6.5}
+cao$estimateCellLoadings(formula = ~ diagnosis + (1 | Seqbatch), random.baseline = TRUE, name = "coda.batch")
+cao$plotCellLoadings(name = "coda.batch", center = "both", min.effect = 1.5)
+round(cao$test.results$coda.batch$random$icc, 2)   # share of each cell type's variance between sequencing batches
+```
+
+With `random.baseline = TRUE` the grouping term `(1 | Seqbatch)` is fitted as a random baseline per sequencing batch:
+each cell type's log ratio gets a random intercept per batch, the loadings are generalized least-squares estimates with
+a variance ratio estimated per cell type, and they are tested by their t statistics against 499 relabeled data sets on
+which the whole fit is repeated, with the residuals, freed of the correlation within batches, exchanged among all
+samples. (Without it the grouping term would only restrict the relabeling: the diagnosis exchanged within batches, and
+batches that hold one diagnosis exchanged as wholes among batches of the same make-up.) The printed values are the
+share of each cell type's variance that lies between the batches. Five cell types remain significant (EN-L2-3, EN-L4,
+IN-PV, IN-SV2C and microglia; adjusted p 0.038-0.046), IN-VIP just misses (0.051), and the microglial loading is 3.3
+instead of 4.1 (log2); the loadings of EN-L2-3, EN-L4, EN-L5-6, IN-VIP, IN-SST and the B cells are those of the fixed-effect model,
+because their between-batch share is estimated at zero.
+
+### Composition without sample 4_D9
+
+```{r loadings-exclude, fig.width=13, fig.height=6.5}
+cao$excludeSamples("4_D9")
+cao$estimateCellLoadings(name = "coda.no4D9")
+cao$plotCellLoadings(name = "coda.no4D9", center = "both", min.effect = 1.5)
+cao$excludeSamples(NULL)
+```
+<!-- END NEW -->
+
+Each point is the loading of the contrast on a cell type (log2), relative to the geometric mean of all cell types
+(left) or centered on the reference set (right; reference types marked "(ref)", the dashed line the other frame's
+zero); the gray band holds 95 % of the loading under permuted labels, so a filled point outside it is a significant
+change, by the reference-free test in both panels. The composition reflects the lesion biology reported by the study:
+the excitatory neurons of layers 2-6 (EN-L2-3, EN-L4, EN-L5-6, EN-MIX) and the PV, SV2C and VIP interneurons are depleted
+in the MS samples (adjusted p 0.013-0.028; IN-SST at 0.079), while microglia (0.013), phagocytes, T cells and stromal
+cells (0.024-0.028) are enriched.
+
+The reference set is the largest block of cell types whose proportions do not change relative to each other (pairwise
+permutation tests of the loading differences): here the seven glial and vascular populations (astrocytes, OL, OPC,
+EN-PYR, Glia-MIX, endothelial and B cells). The eight neuronal types form a block of their own that moves as one, and
+the composition cannot tell which of two blocks of similar size is the stable one, so the one closest to the center of
+the composition is taken; the test relative to the geometric mean of all cell types remains the primary one.
+
+```{r contrast-tree, fig.width=10, fig.height=6}
+cao$plotContrastTree()
+```
+
+The contrast tree explains the compositional shift with as few balances as possible: each node compares the
+geometric-mean proportions of its two sides between the conditions (the log2 ratio, the significance code of its
+permutation p-value and the share of the shift it explains); the samples' own ratios are shown at the significant nodes,
+and the tiles are the reference-centered loadings. The root balance sets the eight neuronal types and the OPCs against the
+other ten populations (glia, EN-PYR, vascular and immune cells; log2 ratio 2.6, adjusted p 0.018, 65 % of the shift);
+below it, the microglia, phagocytes, T cells and stromal cells against OL, astrocytes, EN-PYR, Glia-MIX, endothelial
+and B cells (1.9, 0.018, 18 %), and below that the microglia against the T cells, stromal cells and phagocytes (2.2, 0.036, 7 %). These three
+significant balances explain 90 % of the shift.
+
+```{r predicted-proportions, fig.width=10, fig.height=4.5}
+cao$plotCodaCellTypes(value = "predicted")
+```
+
+The model-predicted proportions at the two conditions do not depend on the reference set (the stars are the per-type
+test relative to the geometric mean, the error bars 95 % intervals of the fitted proportions): the layer 2-3 and layer 4 excitatory neurons make up 22 % and 12 % of the nuclei
+in the controls against 6 % and 3.5 % in MS, while oligodendrocytes go from 9 % to 30 %, astrocytes from 8 % to 16 %
+and microglia from 0.2 % to 4.6 %.
+
+### Robustness of the composition
+
+The sensitivity analysis of the expression shifts applies to the composition as well: the loadings are refitted
+under the same alternative covariate sets, and under every model with each sample left out.
+
+```{r composition-sensitivity, fig.width=11, fig.height=8}
+cao$checkSensitivity(analysis = "composition", n.permutations = 199)
+cao$plotSensitivity(analysis = "composition")
+```
+
+No cell type is called in all five models. With either batch in the model, or with all screened covariates together,
+no loading is significant (adjusted p 0.11 or more): adjusting for either batch shrinks the loadings of the excitatory
+layers, of `IN-VIP` and `IN-SST` and of the immune populations by a fifth to two thirds (EN-L4 from -2.5 to -1.8,
+EN-L5-6 from -1.3 to -0.9, IN-SST from -0.9 to -0.3, microglia from 4.1 to 3.0, phagocytes from 2.2 to 0.8, in log2),
+while the loadings of the PV and SV2C interneurons stay near -1.2. The region-adjusted model keeps microglia,
+phagocytes, stromal cells, IN-PV, IN-SV2C, EN-L5-6 and EN-MIX (adjusted p 0.038-0.041) and loses EN-L2-3, EN-L4,
+IN-VIP and the T cells (0.06-0.10). As with the expression shifts, the batch-adjusted contrasts rest on the mixed
+batches only, and the two batch variables give the same estimates. Three loadings are "driven by one sample": leaving
+out the MS sample `4_D9` changes those of EN-L2-3, EN-L4 and the T cells by a fifth or more. The glial loadings (OL
+1.1, astrocytes 0.3, OPC -0.2), and those of IN-SST and the B cells, lie within the band of shuffled labels and are not
+significant in any model. Unlike the expression shifts, the jackknife intervals of the current model agree with the
+permutation test: they exclude zero for every significant cell type (microglia 2.0 to 6.1, EN-L2-3 -4.0 to -0.9,
+IN-VIP -1.9 to -0.4).
+
+## The sequencing batch
+
+The design check found the sequencing batch associated with the diagnosis (0.57), and the residual maps above show the
+samples grouping by batch once the diagnosis is removed. Two questions follow: does the batch change the data on its
+own, and what do the results become when the diagnosis is only compared within batches?
+
+```{r batch-table}
+table(sample.meta$diagnosis, sample.meta$Seqbatch)
+```
+
+```{r batch-controls}
+cao$excludeSamples(rownames(sample.meta)[sample.meta$diagnosis != "Control"])
+cao$setModel(~ Seqbatch, test = "Seqbatch: all")
+cao$estimateCellLoadings(name = "coda.controls.batch")$results
+cao$excludeSamples(NULL)
+```
+
+Among the 9 controls alone there is no diagnosis to confound, and the composition differs between their three
+sequencing batches: the batch explains 56 % of the composition (chance-corrected R2 of the whole-factor test, p 0.014).
+The batch is therefore associated with the measured composition without the diagnosis being involved, although among
+the controls it is still aligned with age and region (the four SEQ5 controls are 34-54 years old and all prefrontal,
+the four SEQ1 controls 61-82 years old). Two of the five batches hold MS samples only (`SEQ2`,
+`SEQ4`) and one controls only (`SEQ5`), so a comparison over all samples mixes such batch differences into the MS
+effect; only `SEQ1` and `SEQ3` hold both diagnoses (10 of the 21 samples).
+
+```{r batch-model}
+cao$setModel(~ diagnosis + (1 | Seqbatch), test = "diagnosis")
+cao$estimateExpressionShiftMagnitudes(name = "shifts.batch", verbose = FALSE)
+cao$estimateCellLoadings(name = "coda.batch.relabel", verbose = FALSE)
+```
+
+```{r batch-compare}
+sh <- function(nm) { r <- cao$test.results[[nm]]$results; r <- r[r$effect == "shift", ]; r }
+a <- sh("expression.shifts"); b <- sh("shifts.batch"); m <- merge(a[, c("celltype", "estimate.norm", "padj")], b[, c("celltype", "estimate.norm", "padj")],
+                                                                 by = "celltype", all = TRUE, suffixes = c(".all.samples", ".within.batch"))
+m[, -1] <- signif(m[, -1], 2); m[order(m$padj.within.batch), ]
+colSums(m[, c("padj.all.samples", "padj.within.batch")] < 0.05, na.rm = TRUE)
+pc <- function(nm) cao$test.results[[nm]]$contrast$per_cell$padj
+ct <- names(pc("coda"))
+cp <- cbind(all.samples = pc("coda")[ct], within.batch = pc("coda.batch.relabel")[ct], random.intercept = pc("coda.batch")[ct])
+signif(cp[order(cp[, "all.samples"]), ], 2); colSums(cp < 0.05)
+```
+
+```{r batch-shift-plots, fig.width=15, fig.height=5.2}
+cowplot::plot_grid(cao$plotExpressionShiftMagnitudes(name = "expression.shifts") + ggplot2::ggtitle("all samples"),
+                   cao$plotExpressionShiftMagnitudes(name = "shifts.batch") + ggplot2::ggtitle("within sequencing batches"), ncol = 2)
+```
+
+With the grouping term `(1 | Seqbatch)` the diagnosis is exchanged only within `SEQ1` and `SEQ3`; the samples of the
+single-diagnosis batches keep their label in every relabeling (140 distinct relabelings, smallest p 0.0071).
+
+- Composition: of the 11 cell types significant over all samples, none remains when the diagnosis is compared within
+  batches, and 5 remain with a random intercept per batch (the layer 2-3 and 4 excitatory neurons, the PV and SV2C
+  interneurons and the microglia, adjusted p 0.038-0.046). Given the batch effect among the controls, the composition
+  result over all samples cannot be taken at face value; the random-intercept model, which keeps every sample but
+  allows each batch its own baseline, is the more credible estimate.
+- Expression shifts: the opposite. The magnitudes are the same in both models (the same samples and profiles), but
+  within batches 9 of 15 cell types are significant against 2 over all samples (the microglia sit at adjusted p 0.050
+  and are drawn filled in the plot). The plots show the likely reason for the distance model: its noise bands, the range
+  of the shift under relabeling, are narrower within batches in most cell types, because relabeling across batches
+  moves the batch differences into the null distribution and makes it wider; the null distribution of the gene-level
+  test is not shown, and the same narrowing there is an argument by analogy. One of the nine, the SST interneurons, has
+  a shift of only 0.012: the gene-level test, which combines the z-scores of all its genes (only 9 of them pass a
+  gene-level FDR of 10 %), finds a consistent change that the distance model measures as very small.
+
+The same batch structure thus inflates one result and hides another; which depends on whether the batch differences
+end up in the estimate (composition) or in the null distribution (expression shifts).
+
+```{r batch-covariates}
+cao$setModel(~ diagnosis + age + sex + RIN + (1 | Seqbatch), test = "diagnosis")
+cao$setModel(~ diagnosis, test = "diagnosis", verbose = FALSE)
+```
+
+With 21 samples there is no room for covariates as well: adjusting for age, sex and RNA integrity within batches
+leaves 7 samples that can change their label and 10 distinct relabelings (smallest p 0.1), and the design check warns
+that 4 controls are older and 7 MS samples have a higher RNA integrity than any sample of the other group. The
+sensitivity analysis above shows the effect of these covariates without the grouping term.
+
+## Lesion stage
+
+`stage` has three levels: control, acute or chronic active lesions, and chronic inactive lesions. The composition is
+tested for the factor as a whole; the expression shifts, which are estimated for comparisons of two levels, for each
+lesion stage against control, as two tests of one model.
+
+```{r stage-composition}
+cao$setModel(~ stage, test = "stage: all")
+cao$estimateCellLoadings(name = "coda.stage")$results
+```
+
+```{r stage-shifts, fig.width=15, fig.height=5.2}
+cao$setModel(~ stage, test = c("stage: Acute/Chronic active vs Control", "stage: Chronic inactive vs Control"))
+st <- cao$estimateExpressionShiftMagnitudes(name = "shifts.stage", verbose = FALSE)
+st
+cowplot::plot_grid(cao$plotExpressionShiftMagnitudes(name = "shifts.stage", test = 1), cao$plotExpressionShiftMagnitudes(name = "shifts.stage", test = 2), ncol = 2)
+cao$setModel(~ diagnosis, test = "diagnosis", verbose = FALSE)
+```
+
+The lesion stage changes the composition as a whole (chance-corrected R2 0.21, p 0.002 for the three levels). In
+the expression shifts the chronic inactive lesions differ from the controls more than the acute or chronic active ones
+(normalized shifts up to 0.45 in `Glia-MIX` and 0.37 in the oligodendrocytes, against at most 0.15 for the active lesions, 0.14 in their oligodendrocytes), but
+with 4 chronic inactive samples only the oligodendrocytes reach significance (adjusted p 0.03); the active lesions have
+no significant shift in any cell type. The stage is associated with the sequencing batch (0.45), and all four chronic
+inactive samples come from the MS-only batches SEQ2 and SEQ4, so the comparison of this stage with the controls is
+entirely a comparison between batches.
+
+## Differential expression per cell type
+
+Differential expression per cell type uses pseudobulk profiles and the stored model (limma-voom; no resampling, so
+the counts are point estimates).
+
+```{r de}
+de <- cao$estimateDEPerCellType(test = "limma-voom", min.cell.count = 10)
+head(de[["EN-L2-3"]]$res[, c("Gene", "log2FoldChange", "pvalue", "padj", "CellFrac")], 10)
+```
+
+```{r plot-n-de, fig.width=8, fig.height=3}
+cao$plotNumberOfDEGenes()
+```
+
+```{r volcano, fig.width=6, fig.height=5}
+cao$plotVolcano(cell.types = "EN-L2-3")
+```
+
+The number of DE genes follows the expression shifts only in part: EN-L2-3 has by far the most (about 160 at FDR 5 %), then IN-VIP (about 70) and OL (about 60), while EN-L4, EN-L5-6 and EN-PYR, with the next-largest shifts, have almost
+none; astrocytes and endothelial cells have none, and microglia and phagocytes are not in the DE test. In the
+EN-L2-3 volcano the labeled genes with the largest fold changes are up in MS; they include the heat-shock pseudogene
+HSP90AA2P and `PLP1`, an oligodendrocyte transcript whose higher level in MS nuclei is a reminder that ambient RNA from
+the demyelinating lesion environment contributes to neuronal pseudobulk profiles. The most significant genes (top of the
+plot) have moderate fold changes, and nine of the top ten are lower in MS.
+
+## Functional interpretation
+
+Gene-set enrichment (GSEA on the ranked DE statistics of every tested cell type) turns the gene lists into terms. The
+collapsed heatmap clusters the terms by their shared genes and enrichment pattern across cell types and labels each
+cluster by its most frequent words (the number before the label is the number of terms in the cluster; generic words
+are excluded from the labels).
+
+```{r gsea}
+cao$estimateOntology(type = "GSEA", org.db = org.Hs.eg.db::org.Hs.eg.db, seed = TRUE, n.cores = 1)
+```
+
+```{r gsea-up, fig.width=10, fig.height=7}
+cao$plotOntologyHeatmapCollapsed(name = "GSEA", genes = "up", n = 25, clust.method = "ward.D",
+                                 exclude.words = c("regulation", "process", "cell", "cellular", "positive", "negative", "pathway"))
+```
+
+```{r gsea-down, fig.width=10, fig.height=7}
+cao$plotOntologyHeatmapCollapsed(name = "GSEA", genes = "down", n = 25, clust.method = "ward.D",
+                                 exclude.words = c("regulation", "process", "cell", "cellular", "positive", "negative", "pathway"))
+```
+
+```{r gsea-enl23, fig.width=9, fig.height=6, warning=FALSE}
+cao$plotOntology(cell.type = "EN-L2-3", name = "GSEA", genes = "up", n = 12)
+```
+
+The excitatory neurons of layers 2-6 and the interneurons share the same up-regulated programs (EN-MIX weakly,
+EN-PYR hardly at all): oxidative phosphorylation and
+the electron transport chain, cytoplasmic translation and ribosome biogenesis, protein folding and the regulation of
+cell death. This is the neuronal stress response described by Schirmer et al.; the heat-shock genes of the volcano
+sit in the protein-folding terms, and the dotplot for EN-L2-3 lists the individual terms. Oligodendrocytes, OPC and
+astrocytes show the same oxidative-phosphorylation and translation clusters, with an antigen-related cluster weakly
+enriched in OPC. Down-regulated in the neurons and in Glia-MIX are ion
+transport, synaptic signaling and cell adhesion, the synaptic-loss side of the same picture. (The dotplot chunk
+hides a deprecation warning from the enrichplot package.)
+
+## Cluster-free analyses
+
+The two cluster-free maps ask the composition and the expression question in neighborhoods of the cell graph instead of
+in the annotated cell types, so that a change confined to part of a type, or spread across types, is found where it is.
+A neighborhood is a diffusion neighborhood: the cells a heat kernel on the graph reaches from a cell, with the kernel
+strength set so that a typical neighborhood covers a given share of the cells (`scale`). The default `scale = "auto"`
+runs a scan over 1, 3 and 5 % of the cells for both maps (neighborhoods at 10 % would take in the halo around a changed population) under the same relabelings, picks the scale whose own map calls the most
+cells (the finest one when a scale calls nearly every cell), and reports the map at that scale alone, so that the q-values and effects of the map belong to one neighborhood
+size; the choice of the scale is itself tested under the relabelings, and no cell's adjusted p is below the p-value of that test. One value tests a single scale, and a vector reports the scan itself. Cells are adjusted by the pooled permutation
+false-discovery rate (the number of cells beyond a threshold under the relabelings, pooled over all cells, against the
+observed number), and the adjusted z-score of a cell is the tail z of its q-value. The chunks print the scales tried and
+the one chosen, and the annotated embedding is drawn next to each map so that the populations can be followed. The thin black
+lines outline the regions where the cells significant at an adjusted p of 0.05 are the majority.
+
+### Cluster-free density shifts
+
+The density map tests, in every neighborhood, whether the arms differ in how many of their cells fall there: each
+sample's kernel density is tested on the log scale with the same model. The panels show the annotation, the effect (the
+log2 fold change of the density) and the adjusted z-scores.
+
+```{r density, fig.width=15, fig.height=4.8, message=TRUE}
+cao$estimateCellDensity(method = "graph")
+cao$estimateDiffCellDensity()
+cowplot::plot_grid(cao$plotEmbedding(color.by = "cell.groups", title = "cell type"),
+                   cao$plotDiffCellDensity(what = "effect", title = "density change (log2 FC)", outline = TRUE),
+                   cao$plotDiffCellDensity(title = "adjusted z", outline = TRUE), ncol = 3)
+```
+
+The scan picks the 1 % scale (neighborhoods of about 460 cells), the finest of the shared 1, 3 and 5 % set: with the
+coarsest scale now 5 % rather than 10 %, the finest scale calls the most cells. The map calls the immune and vascular
+populations as enriched in MS (microglia, phagocytes and B cells: log2 fold change +1.1 to +1.4 and 81-99 % of their cells at FDR 5 %; the T cells +0.9 with 26 %; the endothelial and stromal cells gain as much, +0.9, with 20 % and 1 % of their few cells called) and the upper-layer excitatory neurons as depleted
+(`EN-L2-3` -0.9 with 91 % of its cells, `EN-L4` 83 %, `EN-MIX` 71 %, `EN-L5-6` 53 %); 8 of the 19 types are significant
+in the per-type summary below (the endothelial and stromal cells sit at adjusted p 0.07-0.08 with their few cells). The glia gain density by smaller amounts: the oligodendrocytes (+0.7, with 6 % of their cells passing and a per-type adjusted p of 0.08) and the astrocytes (+0.3, 21 % of their cells, the tail examined below;
+adjusted p 0.07); the inhibitory neurons are mildly depleted (-0.3 to -0.5) but not called (adjusted p 0.08-0.20), and
+`EN-PYR` and the OPCs are unchanged. 31 % of all cells are called at FDR 5 % and 45 % at FDR 10 % (the count in the
+message).
+
+The preprint's cluster-free figure singled out a "tail" of the astrocytes: a sub-population expressing GFAP, CD44 and
+TNC, markers of reactive astrocytes, that is denser in MS and was not visible at the type level. The default map
+reports the one scale that calls the most cells, 1 % here, where the tail stands out most sharply: about 1,100 astrocyte cells (21 %) are called at FDR 5 %, with a median log2 fold change of +1.2 at 1 % against +0.30 for the
+other astrocytes (at the former 10 % scale the same cells had +0.9 against +0.4, the tail blending into a type-wide
+gain). The scan stored with the result holds every scale, so the picture can be read at each cell's own scale: the scan
+view below shows each cell's density change at its best scale (for about 40 % of the tail cells 1 %, for the rest 3 or 5 %;
+for nearly all other astrocytes 5 %) and the scan's q-value, next to the markers, on the astrocyte region of the embedding.
+
+```{r astro-tail, fig.width=15, fig.height=9}
+ast <- names(cao$cell.groups)[cao$cell.groups == "Astrocytes"]
+sc <- cao$test.results$cell.density$diff$permutation$scales
+cells <- names(sc$best)
+best.effect <- sc$effect[cbind(seq_along(cells), match(sc$best, sc$scale))]; names(best.effect) <- cells
+lims <- apply(cao$embedding[ast, ], 2, quantile, c(0.002, 0.998)); zoom <- list(xlim(lims[, 1]), ylim(lims[, 2]))
+expr <- cao$getJointCountMatrix(raw = FALSE)
+genes <- c("GFAP", "CD44", "TNC", "SHISA9")
+diverging <- colorRampPalette(c("#2166ac", "grey92", "#b2182b"))
+gg <- c(list(cao$plotEmbedding(colors = pmax(pmin(best.effect, 1.5), -1.5), palette = diverging, title = "density change at each cell's best scale") + zoom,
+             cao$plotEmbedding(colors = pmin(-log10(sc$scan.q), 3), title = "scan: -log10 q (capped at 3)") + zoom),
+        lapply(genes, function(g) cao$plotEmbedding(colors = expr[cells, g], title = g) + zoom))
+cowplot::plot_grid(plotlist = gg, ncol = 3)
+```
+
+```{r astro-shisa9, fig.width=4, fig.height=3.5}
+m <- tapply(expr[ast, "SHISA9"], cao$sample.per.cell[ast], mean)
+df <- data.frame(sample = names(m), expr = as.numeric(m), condition = sample.meta[names(m), "diagnosis"])
+ggplot(df, aes(condition, expr, color = condition)) + geom_boxplot(outlier.shape = NA) + geom_jitter(width = 0.15, size = 2) +
+  scale_color_manual(values = cao$sample.groups.palette, guide = "none") + labs(x = NULL, y = "SHISA9, mean expression in astrocytes per sample") + cao$plot.theme
+```
+
+### Cluster-free expression shifts
+
+The expression map tests the contrast in each neighborhood with the per-gene statistic of the per-type test
+(`statistic = "gsd"`: the contrast of each gene over its standard error, combined adaptively over the genes detected in
+at least 5 % of the neighborhood's cells), on neighborhoods of the scale's size around centers that cover the graph (the message gives their number and size);
+each cell averages the tested neighborhoods that contain it. The shift panel shows the size of the change (the mean
+squared gene z-score of the neighborhood, about 1 without a change) and the right panel the adjusted z-scores, one-sided
+(0 means not significant).
+
+```{r cluster-free-shifts, fig.width=11, fig.height=5, message=TRUE}
+cao$estimateClusterFreeExpressionShifts(n.permutations = 499)
+cao$plotClusterFreeExpressionShifts(adjusted = TRUE, outline = TRUE)
+```
+
+In MS the expression difference is largely diffuse: the scan picks the 5 % scale (70 neighborhoods of about 2,400 cells), almost every neighborhood is shifted (the left panel) and 83 % of the cells are called at FDR 5 % (the right panel). The microglia, endothelial and stromal cells stand out (median shift 1.7; 98 % of the microglia called); the phagocytes, oligodendrocytes, IN-VIP, the excitatory neurons other than EN-PYR and OPC follow (1.3-1.7, 95-100 % called), the astrocytes, `Glia-MIX` and the SV2C interneurons are called in part (65-74 %), and the PV and SST interneurons and the pyramidal neurons little or not at all (0-16 %). The per-type summary (the mean statistic of each type against its permutations) is significant after adjustment for 15 of the 19 types; the B cells and EN-PYR sit at adjusted p 0.05-0.07, and IN-PV and IN-SST are not significant (0.12). A
+diffuse component of this kind is what a donor-level difference aligned with the diagnosis produces, and the
+capture and sequencing batches are such a difference here (see the sensitivity analysis). A shift at a boundary between cell types
+whose composition differs between the arms (microglia next to phagocytes) can also be a neighborhood effect, the
+cell-type mix of the neighborhood rather than the expression of its cells differing between MS and control.
+
+Both maps are summarized per cell type by an exact group-level permutation test: the mean per-cell statistic of the type
+is compared with the same mean under the relabelings shared by all cells, so the dependence between neighboring cells is
+carried along, and the result is adjusted across types. The labels give the share of the type's cells called at FDR 5 %.
+
+```{r cluster-free-summary, fig.width=11, fig.height=4.5}
+cao$estimateClusterFreeSummary("cell.density")
+cao$estimateClusterFreeSummary("cluster.free.expr.shifts")
+cowplot::plot_grid(cao$plotClusterFreeSummary("cell.density"), cao$plotClusterFreeSummary("cluster.free.expr.shifts"), ncol = 2)
+```
+
+## Summary
+
+- MS cortex differs from control cortex in expression by small, consistent shifts: the gene-level test calls the oligodendrocytes and the microglia at FDR 5 % and puts the upper-layer excitatory neurons, IN-VIP, EN-MIX, OPC, EN-PYR, EN-L4, EN-L5-6 and the astrocytes just above the threshold (adjusted p 0.055-0.063); EN-PYR and EN-L2-3 have the largest shifts, EN-L2-3 by far the most DE genes, in line with the neuronal stress and loss described by Schirmer et al.; the composition shows neuronal depletion and immune
+  infiltration, which the density map calls in most cells of the excitatory neurons of layers 2-6, the microglia and phagocytes (53-99 % of
+  their cells) but not in the interneurons.
+- The effects are small and their size depends on a few samples, in particular the control 5546_BA9; the jackknife interval of the microglial shift, one of the two the gene-level test calls, includes zero, and that shift lies inside what shuffled labels give.
+- The covariates matter in different ways. Capture and sequencing batch are the strongest structure in the data but are
+  nested in the diagnosis, so they can neither be cleanly adjusted for nor ruled out: adjusting for them increases the
+  estimated shifts in most cell types, but with the capture batch in the model no shift remains significant. `stage` is
+  a refinement of the diagnosis. Age and region are unbalanced between the arms; age is not associated with expression in
+  any cell type, region only in EN-PYR (and with the composition); sex, RIN and PMI are only weakly associated with the
+  diagnosis (although 7 MS samples have a higher RIN than any control) and are not associated with expression.
+- Functionally, the neurons and the glia up-regulate oxidative phosphorylation and translation, the neurons also
+  protein folding (the stress signature), and the neurons and Glia-MIX down-regulate ion transport and synaptic terms.
+- Microglia, the cell type with the most striking lesion biology, are rare in control cortex; from 5 nuclei per sample
+  they can be tested (15 samples) and show a significant, small shift, which however vanishes once batch is adjusted
+  for. The cluster-free density map, which borrows the neighboring cells, calls them enriched; the cluster-free expression map shows them among the most shifted cells of the dataset (median shift 1.7, with the endothelial and stromal cells), with 98 % of their cells called at FDR 5 %.
+
+
+## Session info
+
+```{r session-info}
+sessionInfo()
+```

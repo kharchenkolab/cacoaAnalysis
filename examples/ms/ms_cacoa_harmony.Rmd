@@ -1,0 +1,136 @@
+---
+title: "Cacoa on the multiple sclerosis cortex dataset: the cluster-free maps on a Harmony-aligned graph"
+author: "Cacoa developers"
+date: "`r Sys.Date()`"
+output:
+  github_document:
+    toc: yes
+params:
+  data.file: ""      # ms_harmony_seurat.rds built by prepare_ms_harmony.R; empty = do not evaluate
+  meta.file: "/home/viktor_petukhov/projects/cacoaAnalysis/data/MS/meta.txt" # cell metadata, tab-delimited
+  n.cores: 16
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(eval = nzchar(params$data.file), message = FALSE, warning = FALSE, dpi = 90)
+```
+
+This notebook is a companion of `ms_cacoa.Rmd`: the same cells, counts and annotation on a kNN graph of a Harmony
+embedding (`prepare_ms_harmony.R`: 2,000 variable genes, 50 PCs, Harmony by sample, 30 nearest neighbors on 30 Harmony
+dimensions, UMAP on the same) instead of the Conos alignment graph. Only the graph-dependent parts are rerun, the
+cluster-free density and expression-shift maps; the cell-type-level analyses use the counts and the annotation alone
+and are those of the main notebook. The PF companion (`../pf/pf_cacoa_harmony.Rmd`, `../pf/pf_density_diagnosis.md`)
+shows why the graph matters there: on the Conos alignment of that cohort the density kernel leaks out of the populations
+present in only part of the samples. Here the question is whether the maps of a cohort where the Conos graph worked
+change with the alignment.
+
+```{r libs}
+library(cacoa)
+library(ggplot2)
+library(dplyr)
+```
+
+## Load data
+
+```{r load}
+seu <- readRDS(params$data.file)
+cell.meta <- read.delim(params$meta.file)
+sample.meta <- unique(cell.meta[, c("sample", "diagnosis", "stage", "age", "sex", "region", "Capbatch", "Seqbatch", "RIN", "PMI")])
+rownames(sample.meta) <- sample.meta$sample
+sample.meta <- sample.meta[sort(unique(seu$sample)), -1]
+table(sample.meta$diagnosis)
+```
+
+```{r construct, message=TRUE}
+cao <- Cacoa$new(seu, sample.metadata = sample.meta, sample.per.cell = factor(seu$sample), cell.groups = factor(seu$celltype),
+                 embedding = seu@reductions$umap@cell.embeddings, graph.name = "RNA_nn", data.layer = "data", n.cores = params$n.cores)
+```
+
+```{r options}
+cao$setOptions(n.permutations = 499, seed = 1)
+cao$plot.params <- list(size = 0.2, alpha = 0.2, font.size = 3)
+cao$sample.groups.palette <- c(Control = "#4575b4", MS = "#d73027")
+```
+
+The graph used is Seurat's kNN graph on the Harmony embedding (`RNA_nn`, symmetrized). The thin black lines on the maps
+below outline the regions where the cells significant at an adjusted p of 0.05 are the majority (`outline = TRUE`).
+
+```{r embedding, fig.width=11, fig.height=5}
+cowplot::plot_grid(cao$plotEmbedding(color.by = "cell.groups", title = "cell type"),
+                   cao$plotEmbedding(color.by = "diagnosis", title = "condition", mark.groups = FALSE, show.legend = TRUE), ncol = 2)
+```
+
+```{r set-model}
+cao$setModel(~ diagnosis, test = "diagnosis")
+```
+
+## Cluster-free density shifts
+
+The same map as in the main notebook: the default diffusion neighborhoods (`scale = "auto"`, a scan over 1, 3 and 5 %
+of the cells), each sample's kernel density tested on the log scale with the model, cells adjusted by the pooled
+permutation false-discovery rate.
+
+```{r density, fig.width=15, fig.height=4.8, message=TRUE}
+cao$estimateCellDensity(method = "graph")
+cao$estimateDiffCellDensity()
+cowplot::plot_grid(cao$plotEmbedding(color.by = "cell.groups", title = "cell type"),
+                   cao$plotDiffCellDensity(what = "effect", title = "density change (log2 FC)", outline = TRUE),
+                   cao$plotDiffCellDensity(title = "adjusted z", outline = TRUE), ncol = 3)
+```
+
+On the Harmony graph the scan picks the 1 % scale (neighborhoods of about 470 nuclei), as on the Conos graph, and calls
+15,040 of the 46,340 nuclei at FDR 10 % (32 %; 45 % there). The per-type shares below are those at FDR 5 %, as in the
+summary plot. The immune expansions are called on both graphs, here more completely (microglia, phagocytes, B and T
+cells: 80-100 % of their nuclei, log2 fold changes 1.4-1.8; on Conos 26 % of the T cells and 81-99 % of the others),
+and the neuronal depletion is called in the same layers but less completely: 70 % of the EN-L2-3 nuclei (91 % on
+Conos), 57 % of EN-L4 (83 %), 48 % of EN-MIX (71 %) and 13 % of EN-L5-6 (53 %; adjusted p 0.12 here, 0.024 there),
+although the effects are of similar size (EN-L2-3 -1.1 against -0.9, EN-L5-6 -0.5 against -0.6). Seven types pass the per-type test
+(eight on Conos, where EN-L5-6 passes too); the endothelial and stromal nuclei are called at 0 and 25 % here (per type
+0.41 and 0.12) and at 20 % and 1 % on the Conos graph (0.072 and 0.076).
+
+The kNN neighborhoods of the graph itself (`scale = NULL`: the stored units of `estimateCellDensity()`, 210 cells
+each) are the other neighborhood definition available; they are one hop wide, so they cannot leak the way a kernel can.
+
+```{r density-knn, fig.width=10, fig.height=4.8, message=TRUE}
+cao$estimateCellDensity(method = "graph", name = "cell.density.knn")
+cao$estimateDiffCellDensity(name = "cell.density.knn", scale = NULL)
+cowplot::plot_grid(cao$plotDiffCellDensity(name = "cell.density.knn", what = "effect", title = "kNN units: density change (log2 FC)", outline = TRUE),
+                   cao$plotDiffCellDensity(name = "cell.density.knn", title = "kNN units: adjusted z", outline = TRUE), ncol = 2)
+```
+
+The kNN neighborhoods (210 nuclei) call the same number of nuclei (15,024) with larger effects (microglia 2.7,
+EN-L2-3 -1.9) and the same seven types; IN-PV and EN-L5-6 fall just short (0.051).
+
+## Cluster-free expression shifts
+
+```{r cluster-free-shifts, fig.width=13, fig.height=6, message=TRUE, warning=FALSE}
+cao$estimateClusterFreeExpressionShifts(n.permutations = 499)
+cao$plotClusterFreeExpressionShifts(adjusted = TRUE, font.size = c(2, 3), outline = TRUE)
+```
+
+The expression-shift map is close to the Conos one but somewhat weaker: the scan picks 5 % on both graphs, 74 % of
+the nuclei pass FDR 5 % (83 % there) and 14 of 19 types are significant (15). The immune populations
+lead here (microglia 1.9, phagocytes 1.7, B and T cells 1.6, then OL, EN-L2-3, IN-VIP and the stromal cells at about 1.5; on Conos the endothelial,
+microglial and stromal nuclei at 1.7), EN-L2-3 and EN-L4 are called nearly in full (95-96 % of the nuclei) and EN-MIX
+and EN-L5-6 in part (67 % and 43 %; 98-99 % for all four on Conos), the endothelial nuclei drop out (5 % called, 0.12;
+96 % and 0.044 there) and
+the B cells come in (98 %; 21 % there). IN-PV and IN-SST are not significant on either graph, IN-SV2C only on the Conos
+graph (0.046), EN-PYR on neither.
+
+```{r cluster-free-summary, fig.width=11, fig.height=4.5}
+cao$estimateClusterFreeSummary("cell.density")
+cao$estimateClusterFreeSummary("cluster.free.expr.shifts")
+cowplot::plot_grid(cao$plotClusterFreeSummary("cell.density"), cao$plotClusterFreeSummary("cluster.free.expr.shifts"), ncol = 2)
+```
+
+Per type the maps agree on the main result on both graphs: the immune and microglial expansion with the loss of the
+upper-layer excitatory neurons, and the expression shift of the glia. The Conos graph calls the neuronal losses and the
+endothelial cells more completely, the Harmony graph the lymphocytes and the stromal cells. On this cohort, where all but the four smallest
+populations (B and T cells, phagocytes and stromal cells) are present in most samples of both arms, the alignment
+changes the margins, not the picture.
+
+## Session info
+
+```{r session}
+sessionInfo()
+```

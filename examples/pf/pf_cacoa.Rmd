@@ -1,0 +1,587 @@
+---
+title: "Pulmonary fibrosis: IPF lung versus control lung (Habermann et al. 2020)"
+author: "Cacoa developers"
+date: "`r Sys.Date()`"
+output:
+  github_document:
+    toc: yes
+params:
+  data.file: ""      # pf_refreshed.rds built by prepare_pf_data.R (Conos object); empty = do not evaluate
+  lib.meta: "/home/viktor_petukhov/projects/cacoaAnalysis/data/PF/sample_metadata.csv"   # one row per 10x library
+  cell.meta: "/home/viktor_petukhov/projects/cacoaAnalysis/data/PF/cell_metadata.csv"    # one row per cell
+  n.cores: 24
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(eval = file.exists(params$data.file), purl = FALSE, fig.width = 8, fig.height = 4.5, dpi = 110,
+                      message = FALSE, warning = TRUE, comment = "")
+gsea.available <- file.exists(params$data.file) &&
+  all(vapply(c("clusterProfiler", "DOSE", "enrichplot", "fgsea", "org.Hs.eg.db"), requireNamespace, logical(1), quietly = TRUE))
+```
+
+Habermann et al. (2020, Science Advances) profiled lungs from pulmonary fibrosis patients and from organ donors by
+scRNA-seq (10x). This is the main example of the Cacoa preprint, and as there only the idiopathic pulmonary fibrosis
+(IPF) lungs and the controls are kept, which leaves 22 samples (12 IPF, 10 control; the NSIP, cHP, ILD and sarcoidosis
+lungs are excluded) and 89,326 cells in 31 populations of the paper's annotation. The samples were processed at two
+sites, TGen and Vanderbilt, and the study reports age, sex, smoking, 10x chemistry and the sequencing flowcell per
+library.
+
+The contrast of interest is **IPF versus control**, with `~ Diagnosis` as the model. The covariates are not in the
+model; their relevance is examined at every step: design check, covariate screen, variance partition, sensitivity of
+the main result to adding them, and sample-distance plots colored by them. Two of them matter in different ways: the
+processing site is the strongest structure in the expression data but is balanced between the arms, and the age is
+almost aliased with the diagnosis (controls are young donors, IPF lungs come from transplants of patients aged
+54-74). In short: the epithelium changes most (transitional AT2, proliferating epithelial and secretory cells), the
+composition shows the expansion of the basal and aberrant epithelium and the loss of AT1 cells, the site turns out to be
+harmless, and the age cannot be separated from the diagnosis.
+
+```{r libs}
+library(cacoa)
+library(ggplot2)
+library(dplyr)
+```
+
+## Load data
+
+`prepare_pf_data.R` (next to this notebook) refreshes the Conos object of the preprint and stores it; the paper's
+cell annotation travels with it. The samples of the object are the lungs (`Sample_Name`): the preprint's
+preprocessing merged the libraries of the same lung, and 8 of the 22 samples consist of 2-3 libraries. The study's
+metadata table has one row per library, so it is aggregated to the sample level: the categorical fields are
+identical within a sample (with one exception, two ages recorded for VUILD65, where the first is taken), the
+sequencing saturation is averaged over the libraries, and three technical summaries are computed from the cells of the
+object: the number of cells, the median UMI count and the median mitochondrial fraction.
+
+```{r load}
+con <- readRDS(params$data.file)
+cell.groups <- con$misc$cell_metadata$cellType
+lib.meta <- readr::read_csv(params$lib.meta, show_col_types = FALSE, na = c("", "NA", "Unknown")) %>%
+  filter(Diagnosis %in% c("Control", "IPF"))
+cell.meta <- read.csv(params$cell.meta, row.names = 1) %>% filter(Diagnosis %in% c("Control", "IPF"))
+sample.meta <- lib.meta %>%
+  group_by(Sample_Name) %>%
+  summarise(Diagnosis = first(Diagnosis), Processing_site = first(Processing_site), Chemistry = first(Chemistry),
+            Gender = first(Gender), Age = as.integer(first(Age)), Tobacco = first(Tobacco), Flowcell_ID = first(Flowcell_ID),
+            seq.saturation = mean(readr::parse_number(Sequencing_Saturation))) %>%
+  left_join(cell.meta %>% group_by(Sample_Name) %>%
+              summarise(Sample_Source = first(Sample_Source), n.cells = n(), median.umi = median(nCount_RNA), percent.mt = median(percent.mt)),
+            by = "Sample_Name") %>%
+  tibble::column_to_rownames("Sample_Name")
+sample.meta <- sample.meta[names(con$samples), c("Diagnosis", "Processing_site", "Sample_Source", "Chemistry", "Gender", "Age", "Tobacco",
+                                                 "Flowcell_ID", "n.cells", "median.umi", "percent.mt", "seq.saturation")]
+sample.meta
+```
+
+`Sample_Source` is the tissue source: within TGen the controls come from an organ-donor network (`DNA`) and the IPF
+lungs from a transplant institute (`NTI`), so it is the processing site refined by the diagnosis. The flowcell is
+only partly tied to the site (one flowcell holds all TGen samples but one together with three Vanderbilt samples,
+another is shared by a TGen and a Vanderbilt sample, and the other Vanderbilt samples are spread over seven more), and the
+3' chemistry was used for a single sample. The constructor classifies the columns: the flowcell has too many levels
+for 22 samples and is set aside, and the missing values (one age, one sex, two smoking statuses, recorded as
+"Unknown" in the study) are reported.
+
+```{r construct, message=TRUE}
+cao <- Cacoa$new(con, sample.metadata = sample.meta, cell.groups = cell.groups, n.cores = params$n.cores)
+```
+
+```{r options}
+cao$setOptions(n.permutations = 499, seed = 1)
+cao$plot.params <- list(size = 0.1, alpha = 0.1, font.size = c(2, 3))
+cao$sample.groups.palette <- c(Control = "#4575b4", IPF = "#d73027")
+```
+
+The condition palette is named so that the plots made before the model is set use the same two colors as the ones
+made after it.
+
+```{r embedding, fig.width=11, fig.height=5}
+cowplot::plot_grid(cao$plotEmbedding(color.by = "cell.groups", title = "cell type"),
+                   cao$plotEmbedding(color.by = "Diagnosis", title = "diagnosis", mark.groups = FALSE, show.legend = TRUE), ncol = 2)
+```
+
+Macrophages and ciliated cells are the largest populations. The IPF cells dominate the ciliated and secretory
+epithelium (`SCGB3A2+`, `MUC5B+`, `Basal`, `KRT5-/KRT17+`), the control cells the AT2 and AT1 regions; the immune
+populations mix.
+
+## Check the design
+
+The design check works on the metadata alone: associations between covariates, the balance of each covariate over the
+two arms, and structural problems for a model that would adjust for them.
+
+```{r check-design}
+cao$checkDesign(test = "Diagnosis")
+```
+
+```{r plot-design-balance, fig.width=10, fig.height=5.5}
+cao$plotDesign("balance")
+```
+
+```{r plot-design-assoc, fig.width=7, fig.height=5.5}
+cao$plotDesign("associations")
+```
+
+Age is the problem: the controls are 17-54 years old (median 36), the IPF patients 54-74 (median 66.5), an association
+of 0.89 with the diagnosis. An age-adjusted model would estimate the IPF effect "at equal age", which this design
+cannot support (no young IPF lungs, no old controls), and the check flags it for the sensitivity analysis rather than
+for the model. `Sample_Source` is flagged for the same reason (it is the diagnosis within TGen). The processing site,
+the chemistry and the sex are balanced between the arms; smoking and the mitochondrial fraction differ moderately
+(more never-smokers and higher mitochondrial fractions among the IPF samples). The site is tied to the mitochondrial
+fraction (0.64) and to the sequencing saturation (0.49), i.e. the two sites differ in their technical profile.
+
+## Screen covariates
+
+The screen tests every covariate against the sample-to-sample expression distances of each cell type, alone
+(marginal) and adjusted for the other screened covariates (partial). It is run on a focused set: `Sample_Source` is
+the site refined by the diagnosis (association 0.97 with the site), the chemistry is constant in all but one sample
+and the flowcell is set aside by the constructor. Cell types with fewer than 6 samples are skipped.
+
+```{r screen}
+cao$screenCovariates(covariates = c("Diagnosis", "Processing_site", "Age", "Gender", "Tobacco", "seq.saturation", "n.cells", "median.umi", "percent.mt"),
+                     n.permutations = 499)
+```
+
+```{r plot-screen, fig.width=10, fig.height=5}
+cao$plotCovariateScreen()
+```
+
+```{r plot-screen-summary, fig.width=8, fig.height=3.5}
+cao$plotCovariateSummary(mode = "marginal")
+```
+
+Marginally (the summary bars), the processing site is the strongest covariate (median chance-corrected R2 0.06, global
+p 0.002, significant in 6 cell types), with the largest effects in the secretory and basal epithelium, the lymphatic
+endothelium and the mast cells. The mitochondrial fraction follows (0.05, global p 0.008, 5 cell types; it is tied to
+the site), then the diagnosis and the age (0.04, global p 0.004, 4 cell types each). The diagnosis and the age have the same profile across cell types (strongest
+in `Transitional AT2`, `Proliferating Epithelial Cells` and `Differentiating Ciliated`), which is the aliasing seen
+by the design check: in the partial mode, where each is adjusted for the other, both shrink. Sex, smoking, the number
+of cells and the median UMI count explain nothing.
+
+Two caveats about the screen on this design. With 22 samples and 9 covariates the partial mode runs out of residual
+degrees of freedom in the smaller cell types and falls back to the marginal test (15 of 26 cell types, stated in the
+printout and the heatmap). And in the partial mode (the heatmap) no single (covariate, cell type) pair reaches FDR 5%:
+adjusted for the other covariates, the chance-corrected R2 of a single covariate rarely exceeds 0.1 here, and the
+per-cell-type permutation p-values do not survive the Benjamini-Hochberg adjustment over the whole grid; the global
+max-statistic p-values in the last column carry the signal instead (diagnosis and age 0.01, mitochondrial fraction
+0.02, site 0.03). The screen therefore suggests no addition to `~ Diagnosis`.
+
+The variance partition asks how much of the between-sample variation is diagnosis, how much is site, how much is age,
+and how much is shared between them.
+
+```{r plot-varpart, fig.width=10, fig.height=4.5}
+cao$plotVariancePartition(c("Diagnosis", "Processing_site", "Age"))
+```
+
+The site contributes a unique fraction of 5-13% in about half of the cell types, larger than the diagnosis except in
+`Transitional AT2` and `Proliferating Epithelial Cells`, the types with the clearest IPF effect (the two are about equal
+in the mast cells, and both are close to zero in the proliferating T cells). The age's unique fraction is small: what age explains
+is shared with the diagnosis.
+
+### Sample maps
+
+The maps show the samples in two dimensions (MDS of the sample distances) for one cell type, for all cell types combined, or for the cell-type composition; the subtitles give the chance-corrected R² and permutation p-value of each color and shape variable on its own (the screen's marginal mode; the screen's summary lines print the partial mode where the degrees of freedom allow it).
+
+The sample maps make the covariate structure visible without a model. In `Transitional AT2` the samples separate by
+diagnosis (adj. R² 0.17) and not by site: the two TGen samples lie among the Vanderbilt controls, and the site's R² (0.06, p 0.02)
+comes from both being controls. Averaged over all cell types, the diagnosis runs along one axis and the site along the
+other (adj. R² 0.07 and 0.09), the pattern behind the screen result, and the age tracks the diagnosis. The composition
+shows the same two directions (diagnosis 0.12, site 0.07).
+
+```{r plot-sample-distances, fig.width=15, fig.height=4}
+cowplot::plot_grid(
+  cao$plotSampleDistances(cell.type = "Transitional AT2", color.by = "Processing_site", shape.by = "Diagnosis"),
+  cao$plotSampleDistances(color.by = "Diagnosis", shape.by = "Processing_site"),
+  cao$plotSampleDistances(space = "composition", color.by = "Diagnosis", shape.by = "Processing_site"),
+  ncol = 3)
+```
+
+```{r plot-sample-distances-age, fig.width=5.5, fig.height=4}
+cao$plotSampleDistances(color.by = "Age", shape.by = "Diagnosis")
+```
+
+## Set the model
+
+The model contains only the diagnosis. The reference level is `Control` (matched by name); `shift > 0` means that the
+IPF samples differ from the control samples in a common direction. With 12 and 10 samples the label permutations are
+exact (646,646 distinct relabelings).
+
+```{r set-model}
+cao$setModel(~ Diagnosis, test = "Diagnosis")
+```
+
+### Can the age be adjusted for?
+
+```{r model-age}
+cao$setModel(~ Diagnosis + Age, test = "Diagnosis")
+cao$setModel(~ Diagnosis, test = "Diagnosis", verbose = FALSE)
+```
+
+The model report shows what an age adjustment would rest on. Only 21 % of the variance of the diagnosis is independent
+of the age, and 11 of the 12 IPF samples are older than every control (17-54 years). Adjusted for age, the IPF effect
+would be estimated from a straight-line age trend continued beyond the ages seen in the controls, and its permutation
+test would be approximate (residuals are permuted, because the age is continuous). One sample without an age would be
+dropped. The notebook therefore keeps the diagnosis-only model; the age-adjusted fit is shown in the sensitivity
+analysis below as a check, not as the result. Unlike the Natri cohort, whose patients and controls overlap in age from 43 years on, this
+data set has no common age range to restrict the comparison to: only one IPF patient (54) lies within the control range.
+
+## Expression shifts per cell type
+
+For every cell type, each sample's cells are pooled into a profile, and two questions are asked. Whether the type
+changed is tested gene by gene (the contrast of each gene over its standard error, the gene z-scores combined
+adaptively; `statistic = "gsd"`), with permutation p-values adjusted across cell types. How much it changed comes from a
+model of the sample-to-sample distances: `shift` is the distance between the arm means relative to the within-arm
+spread, `var` the log2 ratio of the arm dispersions at equal cell numbers (tested by the distance model), `total` the
+combination.
+
+```{r shifts, message=TRUE}
+res <- cao$estimateExpressionShiftMagnitudes()
+res
+```
+
+From 5 cells per sample, 28 cell types are tested; three disease-associated populations are not (the aberrant
+basaloid cells `KRT5-/KRT17+`, `PLIN2+ Fibroblasts` and `HAS1 High Fibroblasts`, with at most one control sample).
+Several small populations have a raised p-value floor (`Mesothelial Cells`, `MUC5AC+ High` and `pDCs`, 6-7 samples;
+the notes printed during the run concern the distance model, which uses only the samples with at least 10 cells).
+The magnitudes come from the samples with at least 10 cells (`n.mag`), because a profile of a handful of cells is mostly
+sampling noise, which shrinks the distance-based shift; those three populations have too few such samples and are
+tested without a magnitude.
+
+```{r plot-shifts-full, fig.width=9, fig.height=8.5}
+cao$plotExpressionShiftMagnitudes(show.ci = TRUE, show.genes = TRUE)
+```
+
+Cell types are ordered by the size of the shift; filled points have a significant shift by the gene-level test, the gray
+band holds 95 % of the shifts with shuffled labels, the intervals are the jackknife 95 % intervals, and the margin counts
+the genes changed at a gene-level FDR of 10 %. Nineteen of the 28 tested cell types have a significant shift. The largest are in the epithelium: proliferating
+epithelial cells (0.96, but from only 6 samples with at least 10 cells, with a wide relabeling band), transitional AT2
+(0.43), differentiating ciliated cells and `MUC5B+` secretory cells (0.30) and AT2 (0.21), together with the
+endothelium (0.24); then `SCGB3A2+`, macrophages and smooth muscle (0.15-0.19), AT1, fibroblasts, `SCGB3A2+ SCGB1A1+`,
+cDCs, basal cells and myofibroblasts (about 0.1), and small but significant shifts in monocytes, ciliated and lymphatic
+endothelial cells. The plasma cells have a sizeable estimate from 6 samples and are not significant; the pDCs are significant without
+a magnitude. The lymphocytes do not change. `Fibroblasts` and `AT1`, significant in the preprint, are
+significant here too (13 and 12 samples with at least 5 cells; their magnitudes from 9 and 10 samples).
+
+The jackknife intervals are wide for the small populations, and the gene counts follow both the shifts and the cell
+numbers (about 800 in the endothelial, `MUC5B+` and `SCGB3A2+` cells, 240-440 in the macrophages, differentiating ciliated,
+AT2, smooth muscle and plasma cells). The dispersion change, at equal cell numbers per sample, is
+positive in most epithelial types (the IPF samples are more heterogeneous) but significant in none; `MUC5B+` and the
+smooth muscle cells come closest.
+
+```{r plot-var, fig.width=8, fig.height=6}
+cao$plotExpressionShiftMagnitudes(effect = "var")
+```
+
+### Behind one cell type
+
+```{r plot-shift-detail, fig.width=12, fig.height=3.8}
+cao$plotShiftDetail("Transitional AT2")
+```
+
+The transitional AT2 cells separate by arm along the first MDS axis, with one control closer to the IPF samples than to the other controls, and one
+control (`VUHD66`) has an outlying dispersion. The IPF samples are, if anything, more similar to each
+other than the controls, and the dispersion change at equal cell numbers is small and not significant (-0.20,
+adjusted p 0.44).
+
+```{r plot-influence, fig.width=10, fig.height=5.5}
+cao$plotSampleInfluence()
+```
+
+```{r residual-maps, fig.width=15, fig.height=4.5}
+cowplot::plot_grid(cao$plotSampleDistances(values = "residual", color.by = "Processing_site", shape.by = "Diagnosis"),
+                   cao$plotSampleDistances(values = "residual", color.by = "Tobacco", shape.by = "Diagnosis"),
+                   cao$plotSampleDistances(values = "residual", color.by = "Age", shape.by = "Diagnosis"), ncol = 3)
+```
+
+The residual maps show the sample distances left once the diagnosis is removed. The processing site still structures
+them (10 %, p 0.002), as it did before the model: it is balanced between the arms, so it widens the within-arm spread
+without biasing the comparison (the sensitivity analysis below adjusts for it). Smoking does not structure the residuals
+(p 0.84), and neither does the age (p 1): whatever the age contributes to the expression profiles goes with the diagnosis
+and is removed with it.
+
+
+No single sample creates an effect, but a few set their size: leaving out the control `THD0005` (three libraries
+merged, unknown age) increases the shift of every cell type it contributes to, by up to 1.4 jackknife standard errors
+(plasma cells; about one in the proliferating T, mast and proliferating macrophage populations), `VUHD66` acts the
+same way in `Transitional AT2`, and `VUILD59` (the largest sample) in `AT1`.
+
+## Robustness to the covariates
+
+The shifts are re-estimated under alternative adjustment sets, given explicitly because the screen proposes none: the
+site, the age, the mitochondrial fraction, and site and age together. The set named `current` is the stored main
+model, which the verdicts refer to.
+
+```{r sensitivity}
+cao$checkSensitivity(covariate.sets = list(current = ~ Diagnosis, "plus Processing_site" = ~ Diagnosis + Processing_site,
+                                           "plus Age" = ~ Diagnosis + Age, "plus percent.mt" = ~ Diagnosis + percent.mt,
+                                           "plus site and Age" = ~ Diagnosis + Processing_site + Age),
+                     n.permutations = 199)
+```
+
+```{r plot-sensitivity, fig.width=14, fig.height=9}
+cao$plotSensitivity()
+```
+
+Each cell type gets two verdicts: the magnitude verdict compares the distance-model estimates across the models and
+checks single samples (a shift within the noise band of shuffled labels is "near zero"); the significance verdict
+counts the models in which the gene-level test, refitted under each model, calls the shift (filled points). The current
+model calls 18 of the 25 cell types with a magnitude. Adjusting for the site keeps that picture: 16 cell types stay
+significant (the fibroblasts, `SCGB3A2+ SCGB1A1+` and the lymphatic endothelium drop out, the proliferating macrophages
+come in), and the estimates stay similar (the site structure is removed from the within-arm distances). Adjusting for
+the mitochondrial fraction keeps 14 significant (AT1, the basal cells, cDCs and the lymphatic endothelium drop out) and
+moves some sizes: it roughly halves the transitional AT2 shift (0.43 to
+0.23), lowers the proliferating epithelial shift to about a third (0.96 to 0.29) and raises those of the endothelium and the differentiating ciliated cells to
+about 0.4. Adjusting for the age leaves no cell type significant and makes the estimates erratic (transitional AT2 from
+0.43 to 0.75, the differentiating ciliated and `MUC5B+` cells to about zero). This is not evidence that the IPF effect
+is an age effect; with an association of 0.89, "IPF at equal age" is estimated from almost no information (the oldest
+controls against the youngest patients), and the age-adjusted models say only that the two cannot be separated in this
+design. The magnitude verdicts name the single samples that set the size of several shifts: `VUILD59` (proliferating
+epithelial cells, macrophages), `VUHD66` (transitional AT2, cDCs), `THD0005` (AT2, smooth muscle), `VUHD65` and `VUHD70`
+(differentiating ciliated and `MUC5B+` cells); many of the smaller shifts lie within the noise band.
+
+## Composition
+
+The compositional analysis tests the same contrast on the cell-type proportions (log-ratios, presented against a
+reference set of cell types that do not change relative to each other).
+
+```{r loadings, fig.width=14, fig.height=7.5}
+cao$estimateCellLoadings()
+cao$plotCellLoadings(center = "both")
+```
+
+Four populations change significantly, all epithelial: the basal cells, the `SCGB3A2+` secretory cells and the
+aberrant basaloid `KRT5-/KRT17+` cells expand in IPF, the AT1 cells contract (adjusted p 0.021-0.046). This is the
+picture of the paper and of the preprint: loss of the alveolar epithelium and expansion of a bronchiolized, partly
+aberrant epithelium. The next in line (transitional AT2 cells and the lymphatic endothelium 0.062, NK cells 0.08,
+monocytes 0.083, all lower in IPF; cDCs 0.083 higher) have the direction reported in the preprint but do not pass
+the adjustment. Centered on the reference block (right panel), which lies 0.3 log2 above the geometric mean here, the
+picture is the same; the filled points are the reference-free test in both panels.
+
+The reference set is the largest block of cell types whose proportions do not change relative to each other (pairwise
+permutation tests of the loading differences): here thirteen populations, the ciliated, differentiating ciliated and
+proliferating epithelial cells, the `MUC5AC+ High` cells, the mesothelium, the myofibroblasts, the smooth muscle, the
+`HAS1 High` fibroblasts, B and plasma cells, pDCs, mast cells and proliferating macrophages, whose loadings lie between
+-0.4 and 1.0 log2 relative to the geometric mean. With 31 populations and the spread of this
+cohort the block is not sharply defined (a different permutation draw can pick a smaller central block); the test
+relative to the geometric mean of all cell types remains the primary one.
+
+```{r contrast-tree, fig.width=13, fig.height=6.5}
+cao$plotContrastTree()
+```
+
+The contrast tree explains the compositional shift with as few balances as possible: each node compares the
+geometric-mean proportions of its two sides between the conditions (the log2 ratio, the significance code of its
+permutation p-value and the share of the shift it explains); the samples' own ratios are shown at the significant nodes,
+and the tiles are the reference-centered loadings. The root balance sets the alveolar, immune and vascular populations,
+the fibroblasts and the `MUC5AC+ High` cells (13) against the bronchiolar epithelium, the dendritic, mesothelial,
+smooth-muscle and remaining fibroblast populations, B and plasma cells and the proliferating macrophages (18): a log2
+ratio of 2.7 with 64 % of the shift (adjusted p 0.02). Below it, the aberrant basaloid, basal, `SCGB3A2+`,
+`SCGB3A2+ SCGB1A1+`, `MUC5B+`, cDC and `PLIN2+` fibroblast populations against the rest of that side (1.75, 0.02, 15 %)
+and the AT1 cells, NK cells, transitional AT2 cells and monocytes against the other populations of their side (1.84,
+0.045, 11 %); three balances explain 90 % of the shift. A fourth significant balance sets the basal and `SCGB3A2+` cells
+against the other five populations of their group (1.47, 0.02, 4 %).
+
+```{r predicted-proportions, fig.width=13, fig.height=4.5}
+cao$plotCodaCellTypes(value = "predicted")
+```
+
+The model-predicted proportions at the two conditions do not depend on the reference set (the stars are the per-type
+test relative to the geometric mean, the error bars 95 % intervals of the fitted proportions): AT1 cells go from 1.4 % of the cells in the controls to 0.1 % in IPF, AT2 cells
+from 10 % to 4 %, monocytes from 9 % to 2.5 % and macrophages from 48 % to 40 %, while ciliated cells go from 7 % to
+17 %, basal cells from 0.2 % to 3.3 %, `SCGB3A2+` cells from 0.5 % to 5.5 % and `MUC5B+` cells from 0.7 % to 3.2 %.
+
+
+The same check for the composition: the loadings refitted under alternative covariate sets, with jackknife intervals
+from leaving out each sample.
+
+```{r sensitivity-composition}
+cao$checkSensitivity(analysis = "composition", covariate.sets = list(current = ~ Diagnosis, "plus Processing_site" = ~ Diagnosis + Processing_site,
+                                           "plus Age" = ~ Diagnosis + Age, "plus percent.mt" = ~ Diagnosis + percent.mt),
+                     n.permutations = 199)
+```
+
+```{r plot-sensitivity-composition, fig.width=14, fig.height=9}
+cao$plotSensitivity(analysis = "composition")
+```
+
+AT1, basal and `SCGB3A2+` cells are significant under the current model and when the site or the mitochondrial
+fraction is added; the age adjustment removes their significance and widens the jackknife intervals of all cell types
+(1.3 to 4.4 times, median 2.2), for the reason given above (the age effect is estimated almost entirely from the
+diagnosis). The `KRT5-/KRT17+` loading is set by one sample (`VUILD64`) and loses its significance with the
+mitochondrial fraction (2.3 to 1.4 log2, adjusted p 0.12); the transitional AT2 cells pass the threshold only with the
+mitochondrial fraction (adjusted p 0.039), and the transitional AT2 and monocyte loadings change by more than half with
+the age. With the site or the mitochondrial fraction added, every loading stays within the jackknife 95 % interval of
+the current model.
+
+## Differential expression per cell type
+
+Pseudobulk differential expression with limma-voom on the same model; positive fold changes are higher in IPF.
+
+```{r de}
+de <- cao$estimateDEPerCellType(test = "limma-voom")
+head(de[["Transitional AT2"]]$res[, c("Gene", "log2FoldChange", "pvalue", "padj", "CellFrac")], 10)
+```
+
+```{r plot-n-de, fig.width=9, fig.height=5}
+cao$plotNumberOfDEGenes()
+```
+
+```{r plot-volcano, fig.width=6, fig.height=5}
+cao$plotVolcano(cell.types = "Transitional AT2")
+```
+
+The endothelial cells, macrophages, AT2 and differentiating ciliated cells have the most DE genes (about 350-450 at
+FDR 5%), followed by the transitional AT2 cells (about 200) and `MUC5B+` (about 100): the group of significant
+expression shifts, with the macrophages promoted. The populations with a small shift have a handful of DE genes or none
+(fibroblasts, cDCs, mast cells, B cells). Nine of the ten top transitional AT2 genes are higher in IPF; they include matrix and
+cytoskeletal genes (`SPOCK2`, `PDLIM3`, `CRIP2`, `LGALS1`; `TIMP3` further down), in line with the profibrotic transitional state
+the paper describes; the genes with the largest fold changes (`DKK3`, `PDLIM3`, log2 fold change 4.7 and 4.4) are detected in only 14-17 %
+of the cells.
+
+## Functional interpretation
+
+Gene set enrichment (GSEA over the GO categories) on the per-cell-type DE statistics: the genes of every tested cell
+type are ranked by their signed DE z-score and tested against the GO terms with `fgsea`. The collapsed heatmaps
+group the enriched biological-process terms into clusters named by their most frequent words (generic words
+excluded; the number before a label is the number of terms in the cluster), one column per cell type, separately for
+the terms up and down in IPF; the dot plot lists the top terms of one cell type. The chunks run only when `clusterProfiler`, `DOSE`, `enrichplot`, `fgsea` and `org.Hs.eg.db` are
+installed (`gsea.available` in the setup chunk); the run is seeded on one core so that the figures are reproducible.
+
+```{r gsea, eval=gsea.available}
+cao$estimateOntology(type = "GSEA", org.db = org.Hs.eg.db::org.Hs.eg.db, seed = TRUE, n.cores = 1)
+```
+
+```{r plot-gsea-up, eval=gsea.available, fig.width=10, fig.height=9}
+cao$plotOntologyHeatmapCollapsed(name = "GSEA", genes = "up", n = 25, clust.method = "ward.D",
+                                 exclude.words = c("regulation", "process", "cell", "cellular", "positive", "negative"))
+```
+
+```{r plot-gsea-down, eval=gsea.available, fig.width=10, fig.height=9}
+cao$plotOntologyHeatmapCollapsed(name = "GSEA", genes = "down", n = 25, clust.method = "ward.D",
+                                 exclude.words = c("regulation", "process", "cell", "cellular", "positive", "negative"))
+```
+
+```{r plot-gsea-tat2, eval=gsea.available, warning=FALSE, fig.width=9, fig.height=7.5}
+cao$plotOntology(cell.type = "Transitional AT2", name = "GSEA", genes = "up", n = 15)
+```
+
+The terms up in IPF are shared across the epithelium and the myofibroblasts: cell adhesion and cell-substrate
+adhesion, cell migration, actin cytoskeleton and extracellular-matrix organization, wound healing, strongest in the
+differentiating ciliated, ciliated, transitional AT2 and AT2 cells and the myofibroblasts, weaker in AT1, `MUC5B+`, the
+smooth muscle, the myeloid cells and the lymphatic endothelium, nearly absent in the fibroblasts; the lymphoid populations
+show immune-activation and cytokine terms. The findings of the preprint are recovered where the cell type is
+testable: extracellular-matrix organization is up in AT2 (NES 2.1) and is among the top terms of the transitional
+AT2 cells (NES 2.5); the epithelial-cell apoptotic process is up in AT1, AT2 and transitional AT2 (NES 1.7-2.1,
+adjusted p 0.0004-0.02); the inflammatory side is up in AT2 (type I interferon and cytokine signaling, adjusted p
+0.002-0.03) and in AT1 (cytokine signaling, adjusted p 0.0004; type I interferon production just above the threshold,
+0.055-0.067).
+Of the inflammatory terms reported as down in `MUC5B+`, the humoral and antimicrobial immune responses are down here
+(adjusted p 0.01-0.04), and `SCGB3A2+` and `KRT5-/KRT17+` have too few control samples for
+the DE. The terms down in IPF are translation, ribosome biogenesis and oxidative phosphorylation in about half of the
+populations (the epithelium, fibroblasts, myofibroblasts, monocytes, lymphatic endothelium; not the macrophages,
+B and T cells, mast cells or cDCs), and, the other way round, up in the endothelium and smooth muscle: a ribosomal and mitochondrial gene signature shared by
+unrelated cell types, more likely a sample-level technical difference (the sites differ in sequencing saturation and
+mitochondrial fraction) than cell-type biology. Two caveats: GSEA ranks all genes, so cell types without a single
+DE gene (B and T cells, proliferating T cells and macrophages, fibroblasts) still return hundreds of terms, driven by co-regulated gene
+families; and the cluster names of the collapsed heatmaps are word lists, the full term names are in the dot plots.
+
+## Cluster-free analyses
+
+The two cluster-free maps ask the composition and the expression question in neighborhoods of the cell graph instead of
+in the annotated cell types, so that a change confined to part of a type, or spread across types, is found where it is.
+A neighborhood is a diffusion neighborhood: the cells a heat kernel on the graph reaches from a cell, with the kernel
+strength set so that a typical neighborhood covers a given share of the cells (`scale`). The default `scale = "auto"`
+runs a scan over 1, 3 and 10 % of the cells (1, 3 and 5 % for the expression-shift map, whose neighborhoods at 10 % would take in the halo around a changed population) under the same relabelings, picks the scale whose own map calls the most
+cells (the finest one when a scale calls nearly every cell), and reports the map at that scale alone, so that the q-values and effects of the map belong to one neighborhood
+size; one value tests a single scale, and a vector reports the scan itself. Cells are adjusted by the pooled permutation
+false-discovery rate (the number of cells beyond a threshold under the relabelings, pooled over all cells, against the
+observed number), and the adjusted z-score of a cell is the tail z of its q-value. The chunks print the scales tried and
+the one chosen, and the annotated embedding is drawn next to each map so that the populations can be followed. The thin black
+lines outline the regions where the cells significant at an adjusted p of 0.05 are the majority.
+
+### Cluster-free density shifts
+
+The density map tests, in every neighborhood, whether the arms differ in how many of their cells fall there: each
+sample's kernel density is tested on the log scale with the same model. The panels show the annotation, the effect (the
+log2 fold change of the density) and the adjusted z-scores.
+
+```{r density, fig.width=15, fig.height=4.8, message=TRUE}
+cao$estimateCellDensity(method = "graph")
+cao$estimateDiffCellDensity()
+cowplot::plot_grid(cao$plotEmbedding(color.by = "cell.groups", title = "cell type"),
+                   cao$plotDiffCellDensity(what = "effect", title = "density change (log2 FC)", outline = TRUE),
+                   cao$plotDiffCellDensity(title = "adjusted z", outline = TRUE), ncol = 3)
+```
+
+The scan picks the 1 % scale (neighborhoods of about 900 cells) and no cell passes FDR 10 % at any of the three
+scales, although the composition analysis calls the basal, `SCGB3A2+`, `KRT5-/KRT17+` and AT1 changes clearly. The map
+points the right way (the basal cells are the strongest region, median log2 fold change 1.2, followed by the
+mesothelial, `MUC5AC+ High` and `MUC5B+` cells at about 1.0; per type the permutation test gives mesothelial 0.004,
+basal and `MUC5AC+ High` 0.006, `MUC5B+` 0.008, adjusted 0.06), but the per-cell effects are far below the compositional fold changes and no cell
+reaches the threshold. The reason is the graph, not the test (`pf_density_diagnosis.md`): the Conos graph consists of
+links between lungs, and a population that a lung lacks is linked to that lung through other cell types, so the kernel
+that defines a neighborhood spreads out of the IPF-emergent populations (a basal cell's neighborhood keeps two thirds of
+its weight on basal cells, an AT1 cell's a fifth) and every sample seems to contribute cells to every region. The
+one-hop kNN neighborhoods on the same graph (`scale = NULL`) call 4,599 cells, 82 % of the basal cells among them, and on
+a Harmony-aligned graph of the same cells (`pf_cacoa_harmony.Rmd`) the kernel map calls 11,452 cells with the basal,
+`KRT5-/KRT17+` and `SCGB3A2+` populations leading. The cohorts of the other notebooks, whose populations are present in
+every sample, are not affected.
+
+### Cluster-free expression shifts
+
+The expression map tests the contrast in each neighborhood with the per-gene statistic of the per-type test
+(`statistic = "gsd"`: the contrast of each gene over its standard error, combined adaptively over the genes detected in
+at least 5 % of the neighborhood's cells), on neighborhoods of the scale's size around centers that cover the graph (the message gives their number and size);
+each cell averages the tested neighborhoods that contain it. The shift panel shows the size of the change (the mean
+squared gene z-score of the neighborhood, about 1 without a change) and the right panel the adjusted z-scores, one-sided
+(0 means not significant).
+
+```{r cluster-free-shifts, fig.width=13, fig.height=6, message=TRUE, warning=FALSE}
+cao$estimateClusterFreeExpressionShifts(n.permutations = 499)
+cao$plotClusterFreeExpressionShifts(adjusted = TRUE, font.size = c(2, 3), outline = TRUE)
+```
+
+The scan picks the 3 % scale (300 neighborhoods of about 2,700 cells). The cluster-free view agrees with the
+cluster-based one and extends it: 25 of the 31 types are significant in the per-type summary, and in all but two
+of them (ciliated cells and pDCs) at least 95 % of the cells pass FDR 5 % (86 % of all cells). The strongest shifts (median effect 2.2-2.8)
+are in `AT1`, the IPF-expanded `KRT5-/KRT17+` cells (which could not be tested per cell type, having one control
+sample), `Basal`, transitional AT2, `SCGB3A2+`, `MUC5AC+ High`, `MUC5B+` and the endothelial cells; the disease-
+associated fibroblast states (`PLIN2+`, `HAS1 High`), also untestable per cell type, are shifted as well (1.6). The
+lymphocytes (T, NK, B and plasma cells), the proliferating T cells and the mast cells are not significant (median
+1.3; 2-35 % of their cells called), the pDCs just are (58 % called), and the ciliated cells have the smallest shift
+among the significant types (1.16, 83 % called). Every cell is tested.
+
+Both maps are summarized per cell type by an exact group-level permutation test: the mean per-cell statistic of the type
+is compared with the same mean under the relabelings shared by all cells, so the dependence between neighboring cells is
+carried along, and the result is adjusted across types. The labels give the share of the type's cells called at FDR 5 %.
+
+```{r cluster-free-summary, fig.width=11, fig.height=4.5}
+cao$estimateClusterFreeSummary("cell.density")
+cao$estimateClusterFreeSummary("cluster.free.expr.shifts")
+cowplot::plot_grid(cao$plotClusterFreeSummary("cell.density"), cao$plotClusterFreeSummary("cluster.free.expr.shifts"), ncol = 2)
+```
+
+## Summary
+
+- IPF lung differs from control lung in expression in 19 of the 28 testable populations, most in the epithelium
+  (proliferating epithelial and `MUC5B+` secretory cells, transitional AT2, differentiating ciliated cells, AT2) and the
+  endothelium, less in the stromal and myeloid populations, not in the lymphocytes; the pseudobulk DE counts give about
+  the same group (with the macrophages promoted).
+- The composition shows the expansion of the basal, secretory and aberrant basaloid epithelium and the loss of AT1
+  cells (transitional AT2 just short of significance), as in the paper. The cluster-free expression map confirms most of the expression result with a different ranking (strongest in AT1,
+basal, transitional AT2, `SCGB3A2+` and the secretory cells) and adds the aberrant basaloid epithelium
+(`KRT5-/KRT17+`), which cannot be tested per cell type because it has almost no control cells; the density map calls no cell at FDR 10 % on the Conos graph, whose alignment joins the IPF-emergent populations to other types in the lungs lacking them (`pf_density_diagnosis.md`); on the nearest-neighbor units and on a Harmony-aligned graph it calls the basal, `KRT5-/KRT17+` and `SCGB3A2+` cells.
+- The GSEA recovers the preprint's epithelial findings (matrix organization, epithelial apoptosis and interferon /
+  cytokine signaling up in the alveolar epithelium) and adds a ribosomal / mitochondrial signature shared by about half
+  of the cell types, which looks technical.
+- The processing site is the strongest covariate in the expression data (the largest unique fraction of the
+  between-sample variation in most cell types, visible in the sample maps) but it is balanced between the arms, and
+  adjusting for it leaves the estimates and the significant cell types about the same (16 instead of 18). The technical summaries follow the site (mitochondrial fraction, sequencing
+  saturation) and are equally harmless.
+- The age is aliased with the diagnosis (controls are young donors, IPF patients are 54-74): it cannot be adjusted
+  for, and the age-adjusted models of the sensitivity analysis, with no significant cell type and erratic estimates, say
+  so rather than contradicting the main result.
+- The effects rest on few samples in several cell types: `VUILD59`, `VUHD66` and `THD0005` set the size of several shifts,
+  and the smallest populations (6-7 samples) have raised p-value floors.
+
+## Session info
+
+```{r session-info}
+sessionInfo()
+```

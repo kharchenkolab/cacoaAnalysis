@@ -1,0 +1,594 @@
+---
+title: "Cacoa on the lupus PBMC dataset (Perez et al. 2022): covariates and an entangled processing cohort"
+author: "Cacoa developers"
+date: "`r Sys.Date()`"
+output:
+  github_document:
+    toc: yes
+params:
+  data.file: ""      # sle_harmony_seurat.rds built by prepare_sle_harmony.R; empty = do not evaluate
+  meta.file: ""      # sle_harmony_seurat_sample_meta.rds written next to it
+  n.cores: 16
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(eval = nzchar(params$data.file), message = FALSE, warning = FALSE, fig.path = "sle_cacoa_files/figure-gfm/", dpi = 90, comment = "")
+gsea.available <- nzchar(params$data.file) &&
+  all(vapply(c("clusterProfiler", "DOSE", "enrichplot", "fgsea", "org.Hs.eg.db"), requireNamespace, logical(1), quietly = TRUE))
+```
+
+Perez et al. (2022, Science) profiled peripheral blood mononuclear cells (PBMC) of 162 patients with systemic lupus
+erythematosus (SLE) and 99 healthy donors by multiplexed scRNA-seq (10x). The data are taken from CELLxGENE with the
+authors' cell-type annotation (11 populations) and subsampled to at most 600 cells per donor, which leaves 156,456 cells
+of 261 donors; the cells are placed on a kNN graph of a Harmony embedding (`prepare_sle_harmony.R`, next to this
+notebook). The donors were processed in four processing cohorts (`C1`-`C4`), and the study records their ancestry
+(`ethnicity`), sex and age, and, for the patients, the disease state at sampling (`flare`, `managed`, `treated`).
+
+The contrast of interest is **SLE versus healthy**. This notebook is about the covariates: it fits the contrast
+without them and with age, ethnicity and the processing cohort, shows which results depend on that choice, and then
+turns to a second contrast, flare versus managed disease, that cannot be separated from the processing cohort at all.
+In short: the classical monocytes expand and the CD4 T cells contract in SLE, and the expression of every major
+population shifts, with or without the covariates; adjusting for them removes the plasmacytoid dendritic cells from the
+composition result. The flare samples all come from one processing cohort, and healthy donors of that cohort differ
+from the other healthy donors in the expression of every major population, so the expression differences between
+flare and managed disease in these data cannot be attributed to the flare.
+
+```{r libs}
+library(cacoa)
+library(ggplot2)
+```
+
+## Load data
+
+```{r load}
+seu <- readRDS(params$data.file)
+samples <- sort(unique(seu$sample))
+sample.meta <- readRDS(params$meta.file)[samples, c("condition", "disease_state", "cohort", "ethnicity", "sex", "age", "n.cells")]
+sample.meta$disease_state[sample.meta$condition == "Healthy"] <- "healthy"
+sample.meta$n.cells <- as.vector(table(seu$sample)[samples])   # cells in this object (at most 600 per donor)
+summary(sample.meta)
+table(sample.meta$condition, sample.meta$cohort)
+table(seu$celltype)
+```
+
+The design is unbalanced in two ways that matter below. Cohort `C1` holds only healthy donors, and nearly all patients
+are in `C2` and `C4`. Women are 244 of the 261 donors. `n.cells` is the number of cells per donor in this object.
+
+```{r construct, message=TRUE}
+cao <- Cacoa$new(seu, sample.metadata = sample.meta, sample.per.cell = factor(seu$sample), cell.groups = factor(seu$celltype),
+                 embedding = seu@reductions$umap@cell.embeddings, graph.name = "RNA_nn", data.layer = "data", n.cores = params$n.cores)
+cao$setOptions(n.permutations = 499, seed = 1)
+cao$plot.params <- list(size = 0.1, alpha = 0.1, font.size = c(2, 3))
+cao$sample.groups.palette <- c(Healthy = "#4575b4", SLE = "#d73027")
+```
+
+```{r embedding, fig.width=11, fig.height=5}
+cowplot::plot_grid(cao$plotEmbedding(color.by = "cell.groups", title = "cell type"),
+                   cao$plotEmbedding(color.by = "condition", title = "condition", mark.groups = FALSE, show.legend = TRUE), ncol = 2)
+```
+
+The embedding separates the myeloid populations (classical and non-classical monocytes, `cM` and `ncM`, and the
+conventional dendritic cells, `cDC`), the CD4 and CD8 T cells (`T4`, `T8`) and the NK cells, the B cells, and a small
+group of plasmablasts (`PB`), plasmacytoid dendritic cells (`pDC`), proliferating lymphocytes (`Prolif`) and progenitor
+cells (`Progen`).
+
+## Check the design
+
+```{r check-design}
+cao$checkDesign(test = "condition")
+```
+
+The design check reports what is known about the study: `disease_state` is defined only for patients and determines
+the condition, so it cannot be a covariate of this contrast (it is the variable of the second contrast below). The
+processing cohort is associated with the condition (0.65 on the check's association scale) because cohort `C1` holds only healthy donors and `C2` mostly patients (109 of 121);
+age and ethnicity are weakly associated (0.22 and 0.27).
+
+```{r plot-design-balance, fig.width=10, fig.height=6}
+cao$plotDesign("balance")
+```
+
+```{r plot-design-assoc, fig.width=7, fig.height=6}
+cao$plotDesign("associations")
+```
+
+The association matrix shows every pair of metadata columns (Cramér's V for two factors, the correlation ratio for a
+factor and a number). The processing cohort is associated with the condition (0.65) and also with age (0.36) and
+ethnicity (0.31): the cohorts differ in whom they recruited, so adjusting for any of these covariates also partly
+adjusts for the others.
+
+
+## Screen covariates
+
+```{r screen}
+cao$screenCovariates(n.permutations = 199)
+```
+
+```{r plot-screen, fig.width=10, fig.height=6}
+cao$plotCovariateScreen()
+```
+
+```{r plot-screen-summary, fig.width=8, fig.height=4}
+cao$plotCovariateSummary()
+```
+
+The covariate screen tests each covariate's association with each cell type's expression after the other covariates
+(partial mode). The processing cohort is associated with the expression of all 8 screened cell types and explains the
+most (adjusted R2 0.10 for all cell types together, median 0.08 over the cell types), and with the spread of the samples (dispersion) in 6; ethnicity, sex and age follow
+with much smaller shares (adjusted R2 0.01 or less). The screen suggests `~ condition + ethnicity + sex + age`; it does
+not propose the cohort, which is strongly tied to the condition. The model below adjusts for age and ethnicity and
+treats the cohort as a grouping term: `(1 | cohort)` is not fitted, it restricts the relabeling of the condition to
+within cohorts, so that no cohort difference can enter the null distribution as a condition effect. Sex is left out
+(17 men); the sensitivity analysis adds it.
+
+```{r variance-partition, fig.width=10, fig.height=5}
+cao$plotVariancePartition(c("condition", "cohort", "ethnicity", "age"))
+```
+
+The variance partition splits the between-donor variation of each cell type's expression into the parts explained
+by each variable alone, a shared part and a residual. The processing cohort explains far more than the condition in
+every cell type: about 14 % against 3 % in the CD4 T cells, 11 % against 4 % in the classical monocytes. The
+processing cohort, not the condition, is the largest structured source of variation in these data.
+
+### Sample maps
+
+```{r sample-maps, fig.width=15, fig.height=5}
+cowplot::plot_grid(
+  cao$plotSampleDistances(cell.type = "cM", color.by = "cohort", shape.by = "condition"),
+  cao$plotSampleDistances(color.by = "cohort", shape.by = "condition"),
+  cao$plotSampleDistances(space = "composition", color.by = "cohort", shape.by = "condition"), ncol = 3)
+```
+
+The sample maps place the donors by the distances between their profiles: of the classical monocytes (left), of all
+cell types together (middle) and of the composition (right); color is the cohort, shape the condition. The subtitles
+give the share of the distances explained by each variable. On the expression maps the cohort explains 17-18 % and the
+condition 6-8 %: the donors group by cohort first (`C1` and `C4` apart from `C2`), and within a cohort by condition.
+The composition is much less structured by the cohort (4 %) than the expression.
+
+
+## SLE versus healthy, without covariates
+
+First the contrast without any covariate, stored under separate names so that the two models can be compared.
+
+```{r model-plain}
+cao$setModel(~ condition, test = "condition")
+cao$estimateCellLoadings(name = "coda.plain")
+cao$estimateExpressionShiftMagnitudes(name = "shifts.plain")
+```
+
+## SLE versus healthy, with the covariates and the cohort
+
+```{r set-model}
+cao$setModel(~ condition + age + ethnicity + (1 | cohort), test = "condition")
+```
+
+With the grouping term the condition is exchanged within the cohorts, and within each cohort among donors of the same
+ethnicity (9 strata, as the report says); the 38 healthy donors of `C1` and the 3 African American patients of `C3`
+are in strata that hold only one condition and keep their label in every relabeling, so 220 of the 261 donors can change their value. Age is continuous, so the exchange of the
+rows of the design within cohorts is approximate (the note says so).
+
+```{r loadings, fig.width=13, fig.height=6.5}
+cao$estimateCellLoadings()
+cao$plotCellLoadings(center = "both")
+```
+
+The composition test fits the log ratios of the cell-type proportions with the model and tests each cell type's
+loading by relabeling. Classical monocytes and proliferating cells are enriched in SLE, CD4 T cells, B cells and NK cells
+depleted (adjusted p 0.007-0.022); the non-classical monocytes are enriched (0.033).
+
+```{r loadings-table}
+knitr::kable(codaLoadingsTable(cao$test.results$coda, min.effect = 1.25), digits = 3)
+```
+
+```{r coda-samples, fig.width=13, fig.height=8.5}
+cao$plotCodaSamples(n.top = 8)
+```
+
+The per-donor proportions show the data behind each loading: the eight cell types with the smallest p-values, the
+healthy donors on the left, the patients on the right, with the fitted proportion and its interval. The changes are
+shifts of broad distributions, not of a few donors: the patients' classical-monocyte fraction overlaps that of the
+healthy donors for most of its range. The named donors are those whose omission changes the loading by more than a
+standard error or whose residual exceeds three.
+
+```{r contrast-tree, fig.width=10, fig.height=6}
+cao$plotContrastTree()
+```
+
+```{r coda-predicted, fig.width=9, fig.height=5}
+cao$plotCodaCellTypes(value = "predicted")
+```
+
+The contrast tree summarizes the composition change by successive splits: the first (0.88 log2 units, 75 % of the
+change) separates the classical and non-classical monocytes and proliferating cells, which expand, from the rest; the
+second (0.46, 19 %) separates the CD4 T, B, pDC and NK cells, which contract, from the CD8 T cells, conventional
+dendritic cells, plasmablasts and progenitors. The predicted proportions translate the loadings into fractions of
+the PBMC: classical monocytes from 24 % to 37 %, CD4 T cells from 34 % to 22 %, at the reference values of the
+covariates.
+
+```{r coda-diagnostics, fig.width=12, fig.height=6}
+cao$plotFitDiagnostics("composition")
+```
+
+The fit diagnostics show, for every donor and cell type, the studentized residual of the log ratio (left) and the
+change of the loading without the donor (right). Of the 22 donors with a residual beyond three in at least one cell
+type, 14 are managed patients, 4 flare patients, 3 healthy donors and 1 a treated patient; the flare patients are
+over-represented relative to their number (4 of 13, against 14 of 146 managed patients). No single donor changes a
+loading by a standard error (largest change 0.39 standard errors).
+
+
+```{r shifts, message=TRUE}
+res <- cao$estimateExpressionShiftMagnitudes()
+res
+```
+
+```{r plot-shifts, fig.width=9, fig.height=5.2}
+cao$plotExpressionShiftMagnitudes(show.ci = TRUE, show.genes = TRUE)
+```
+
+The seven major populations shift in expression (gsd, adjusted p 0.003), and so do the proliferating cells (0.0075);
+the plasmablasts and plasmacytoid dendritic cells do not (0.33 and 0.32). The
+largest normalized shifts are those of the classical monocytes and the CD4 T cells (0.17), the smallest those of the
+conventional dendritic cells and the NK cells (0.07); the bars on the right count the genes with a change at FDR 10 %
+(among the seven major populations, from 422 in cDC to about 1,600-1,700 in cM and T4). The plasmablasts, plasmacytoid dendritic cells and proliferating cells
+have too few donors with 10 or more cells for a magnitude.
+
+```{r plot-shifts-var, fig.width=9, fig.height=5.2}
+cao$plotExpressionShiftMagnitudes(effect = "var")
+```
+
+The dispersion effect tests whether the patients differ more from each other than the healthy donors do. They do,
+in all seven populations (adjusted p 0.002-0.008), most in the CD4 T cells (log2 ratio of the spreads 0.40) and least
+in the conventional dendritic cells (0.11): in addition to the common shift, the patients vary more among themselves.
+
+### Behind one cell type
+
+```{r shift-detail, fig.width=12, fig.height=8}
+cao$plotShiftDetail("cM")
+```
+
+The detail of the classical monocytes shows the three quantities behind the result: the donors on the adjusted
+distances (left), the distances between pairs of donors within each condition and between them (middle), and each
+donor's dispersion (right). Pairs of patients are about as different as pairs of a patient and a healthy donor, and
+both more than pairs of healthy donors: the shift (0.17) and the larger spread of the patients (0.30) together make
+the total difference (0.31).
+
+```{r sample-influence, fig.width=11, fig.height=7}
+cao$plotSampleInfluence()
+```
+
+```{r shift-diagnostics, fig.width=12, fig.height=6}
+cao$plotFitDiagnostics("expression.shifts")
+```
+
+```{r residual-maps, fig.width=15, fig.height=4.5}
+cowplot::plot_grid(cao$plotSampleDistances(values = "residual", color.by = "cohort", shape.by = "condition"),
+                   cao$plotSampleDistances(values = "residual", color.by = "sex", shape.by = "condition"),
+                   cao$plotSampleDistances(values = "residual", color.by = "disease_state", shape.by = "condition"), ncol = 3)
+```
+
+```{r residual-diagnostics, fig.width=12, fig.height=6}
+cao$plotFitDiagnostics("expression.shifts", color.by = "cohort")
+```
+
+With 261 donors the diagnostics are drawn as one dot per donor and cell type. The patients' profiles lie mostly
+farther from their fitted position than the healthy donors' (red dots above, blue below), the larger spread of the
+patients seen above; every donor lies within 1.3-fold farther and 1.5-fold closer than a typical one (log2 -0.62 to 0.39), and no single donor changes
+a shift by more than 0.31 standard errors.
+
+The residual maps show the donor distances left once the model's fixed part (condition, age, ancestry) is removed.
+The processing cohort still structures them (11 %, p 0.002): it is a grouping term, so its differences are not fitted
+but the condition is relabeled only within cohorts, and they do not enter the comparison. The cohort also shows in the
+diagnostics colored by it: the donors of `C1`, all healthy, lie closer to their fitted position than the other donors
+in all seven populations, most in the monocytes and T cells, so part of the healthy donors' smaller spread is a property of this cohort. Sex explains
+almost nothing (adjusted R² 0.00, although with p 0.002; 17 of the 261 donors are men). The disease state (healthy, managed, flare, treated) explains
+1 % (p 0.004), with no group forming a separate region; the flare samples are examined below.
+
+
+```{r compare-models}
+cmp <- function(a, b, what) { x <- cao$test.results[[a]]; y <- cao$test.results[[b]]
+  if (what == "coda") { p1 <- x$contrast$per_cell$padj; p2 <- y$contrast$per_cell$padj[names(p1)]; return(data.frame(plain = signif(p1, 2), adjusted = signif(p2, 2))[order(p1), ]) }
+  r1 <- x$results[x$results$effect == "shift", ]; r2 <- y$results[y$results$effect == "shift", ]; m <- merge(r1[, c("celltype", "padj", "estimate.norm")], r2[, c("celltype", "padj", "estimate.norm")], by = "celltype", suffixes = c(".plain", ".adjusted"))
+  m[order(m$padj.plain), ] }
+cmp("coda.plain", "coda", "coda")
+cmp("shifts.plain", "expression.shifts", "shifts")
+```
+
+The two tables compare the model without covariates (`plain`) with the adjusted one. In the composition, the
+plasmacytoid dendritic cells (`pDC`) are depleted at adjusted p 0.0044 without covariates and not significant with them
+(0.097), and the non-classical monocytes weaken (0.0044 to 0.033); the other results hold. In the expression shifts,
+the pDC shift is significant without covariates and grouping term but not in the adjusted model (0.002 against 0.32),
+and the magnitudes of the other types
+shrink by 6-21 % with the covariates. Which covariate matters is shown by the sensitivity analyses below.
+
+```{r sensitivity}
+cao$checkSensitivity(n.permutations = 199)
+```
+
+```{r plot-sensitivity, fig.width=10, fig.height=7}
+cao$plotSensitivity()
+```
+
+The sensitivity analysis refits the shift under alternative covariate sets: without covariates, without each
+adjusting covariate, without the grouping term (`minus (1 | cohort)`: the condition exchanged among all donors, the
+cohort ignored) and with sex added. The seven major populations are significant in all six models and their
+magnitudes stay within a narrow range; for the contrast between SLE and healthy donors the processing cohort changes
+little, because both conditions are present in three of the four cohorts. The pDC magnitude rests on 4 donors with
+enough cells (2 per condition); it is estimated in three of the models only, changes sign between them, and is not
+significant in any of them (within the strata these 4 donors allow a single distinct relabeling).
+
+```{r sensitivity-composition, fig.width=10, fig.height=7}
+cao$checkSensitivity(analysis = "composition", n.permutations = 199)
+cao$plotSensitivity(analysis = "composition")
+```
+
+The composition refitted under the same six models shows where the covariates matter. Five cell types (proliferating
+cells, classical and non-classical monocytes, CD4 T and B cells) are significant in all six. The pDC depletion is
+significant only without ethnicity, without the grouping term, or with sex added, and not in the current model, the
+model without age, or the model without both age and ethnicity (adjusted p 0.018-0.11 over the six models): it lies near the significance threshold, its significance changes with
+the adjustment set rather than with one covariate, and its size lies within the range of shuffled labels. The NK
+cells are significant only in the models that include age.
+
+
+## Differential expression per cell type
+
+```{r de}
+cao$estimateDEPerCellType(test = "limma-voom")
+```
+
+```{r plot-n-de, fig.width=8, fig.height=3}
+cao$plotNumberOfDEGenes()
+```
+
+Differential expression per cell type uses limma-voom, which fits the grouping term `(1 | cohort)` as a random intercept
+(one correlation between the donors of a processing cohort, shared by all genes of a cell type: 0.03 to 0.17, largest in
+the CD4 T cells). It finds the most genes in the classical monocytes (1,665), then the CD8 and CD4 T cells (686 and
+678) and the non-classical monocytes (645), and the fewest in the conventional dendritic cells (71); the classical
+monocytes and CD4 T cells also have the largest shifts.
+
+```{r volcano, fig.width=8, fig.height=6}
+cao$plotVolcano(cell.types = "cM")
+```
+
+The volcano plot of the classical monocytes shows the differential expression behind their shift. Of the 20 most
+significant genes, 19 are higher in SLE, and most of them are interferon-stimulated genes (EPSTI1, IFI44, IRF7, OAS1,
+MX2, XAF1, IFI44L, IFI6; ISG15 follows at rank 22), the interferon signature known from SLE blood: a positive control
+for the analysis.
+
+## Functional interpretation
+
+```{r gsea, eval=gsea.available}
+cao$estimateOntology(type = "GSEA", org.db = org.Hs.eg.db::org.Hs.eg.db, seed = TRUE, n.cores = 1)
+```
+
+```{r plot-gsea-up, eval=gsea.available, fig.width=10, fig.height=9}
+cao$plotOntologyHeatmapCollapsed(name = "GSEA", genes = "up", n = 25, clust.method = "ward.D")
+```
+
+```{r plot-gsea-down, eval=gsea.available, fig.width=10, fig.height=9}
+cao$plotOntologyHeatmapCollapsed(name = "GSEA", genes = "down", n = 25, clust.method = "ward.D")
+```
+
+```{r plot-gsea-cm, eval=gsea.available, warning=FALSE, fig.width=9, fig.height=7.5}
+cao$plotOntology(cell.type = "cM", name = "GSEA", genes = "up", n = 15)
+```
+
+Gene set enrichment on the DE results ranks GO terms per cell type. In every population the leading increased terms
+are the antiviral and interferon responses (defense response to virus, negative regulation of viral genome
+replication, response to type I interferon), most significant in the monocytes; in the classical monocytes all 15
+increased terms shown are antiviral, interferon or other immune responses. The leading decreased term is cytoplasmic
+translation in all seven populations. In six of them, all except the conventional dendritic cells, it is followed by
+other translation and ribosome biogenesis terms and is the most significant term in either direction; in the
+conventional dendritic cells it is weak (adjusted p 0.009).
+
+
+## Cluster-free analyses
+
+### Cluster-free density shifts
+
+```{r density, fig.width=15, fig.height=4.8, message=TRUE}
+cao$estimateCellDensity(method = "graph")
+cao$estimateDiffCellDensity()
+cowplot::plot_grid(cao$plotEmbedding(color.by = "cell.groups", title = "cell type"),
+                   cao$plotDiffCellDensity(what = "effect", title = "density change (log2 FC)", outline = TRUE),
+                   cao$plotDiffCellDensity(title = "adjusted z", outline = TRUE), ncol = 3)
+```
+
+The density map tests the change of cell density on the graph, cell by cell, with the same model. At the scale chosen
+(diffusion neighborhoods of 5 % of the cells) 79,973 of the 156,456 cells are called at FDR 10 %: the classical
+monocytes gain density, a large part of the CD4 T cells loses it (outlined regions), in agreement with the composition.
+
+### Cluster-free expression shifts
+
+```{r cluster-free-shifts, fig.width=13, fig.height=6, message=TRUE, warning=FALSE}
+cao$estimateClusterFreeExpressionShifts(n.permutations = 499)
+cao$plotClusterFreeExpressionShifts(adjusted = TRUE, font.size = c(2, 3), outline = TRUE)
+```
+
+```{r cluster-free-summary, fig.width=11, fig.height=4.5}
+cao$estimateClusterFreeSummary("cell.density")
+cao$estimateClusterFreeSummary("cluster.free.expr.shifts")
+cowplot::plot_grid(cao$plotClusterFreeSummary("cell.density"), cao$plotClusterFreeSummary("cluster.free.expr.shifts"), ncol = 2)
+```
+
+The expression-shift map calls every one of the 156,456 cells (at the finest scale, diffusion neighborhoods of 1 %
+of the cells), and the population summaries (right) are significant for all eleven populations: the interferon
+response affects every cell type, so the map adds no localization here beyond the cell-type test. The density
+summaries (left) largely repeat the composition: proliferating cells and monocytes gain density, the CD4 and CD8 T
+cells and B cells lose it. They differ from it for two cell types: the CD8 T cells lose density, while their loading
+is not significant (and positive), and the NK cells, depleted in the composition, show no significant density change.
+
+
+## SLE in Asian and European American donors
+
+Perez et al. asked whether SLE affects the immune cells of donors of Asian and European ancestry alike. With the
+interaction of condition and ancestry in the model, the comparison of SLE with healthy donors can be made within each
+ancestry group (a test at a fixed level of the other factor), on the 256 donors of the two groups.
+
+```{r ancestry}
+cao$excludeSamples(rownames(sample.meta)[!sample.meta$ethnicity %in% c("Asian", "European American")])
+for (anc in c("Asian", "European American")) {
+  cao$setModel(~ condition * ethnicity + age + (1 | cohort), contrast = list(type = "simple", term = "condition", num = "SLE", den = "Healthy", at = list(ethnicity = anc)),
+               verbose = anc == "Asian")
+  cao$estimateCellLoadings(name = paste("coda", anc), verbose = FALSE)
+  cao$estimateExpressionShiftMagnitudes(name = paste("shifts", anc), verbose = FALSE)
+}
+cao$excludeSamples(NULL)
+cao$setModel(~ condition + age + ethnicity + (1 | cohort), test = "condition", verbose = FALSE)
+sh <- function(nm) { r <- cao$test.results[[nm]]$results; r <- r[r$effect == "shift", ]; r[, c("celltype", "estimate.norm", "padj")] }
+m <- merge(sh("shifts Asian"), sh("shifts European American"), by = "celltype", suffixes = c(".Asian", ".European"))
+m[, -1] <- signif(m[, -1], 2); m[order(m$padj.Asian), ]
+lo <- function(nm) { x <- cao$test.results[[nm]]$contrast; data.frame(loading = x$loadings$obs / log(2), padj = x$per_cell$padj[names(x$loadings$obs)]) }
+l1 <- lo("coda Asian"); l2 <- lo("coda European American")[rownames(l1), ]
+signif(data.frame(loading.Asian = l1$loading, padj.Asian = l1$padj, loading.European = l2$loading, padj.European = l2$padj, row.names = rownames(l1)), 2)
+```
+
+```{r ancestry-plots, fig.width=15, fig.height=5.2}
+cowplot::plot_grid(cao$plotExpressionShiftMagnitudes(name = "shifts Asian") + ggplot2::ggtitle("Asian donors"),
+                   cao$plotExpressionShiftMagnitudes(name = "shifts European American") + ggplot2::ggtitle("European American donors"), ncol = 2)
+```
+
+The model report shows how the comparison within one ancestry is made: only the 107 Asian donors change their label
+(24 healthy, 83 SLE), the European American donors keep theirs. Most Asian healthy donors come from one cohort (21 of
+24 in `C4`), and the cohort `C2`, with 59 Asian patients, has a single Asian healthy donor; the Asian comparison
+therefore rests mainly on the donors of `C4`. The European American comparison has 74 healthy and 75 SLE donors; 38 of the healthy donors are in `C1`, which
+holds no patients, so they keep their label in every relabeling.
+
+The seven major populations and the proliferating cells shift significantly in both groups (in the Asian donors the
+conventional dendritic cells and the proliferating cells at adjusted p 0.021 and 0.027, the others at 0.003). The normalized shifts of the Asian donors are larger
+(CD4 T cells 0.33 against 0.16, CD8 T cells 0.21 against 0.10, B cells 0.19 against 0.09), but so is their noise band
+(note the different axes): with 24 healthy donors 95 % of the relabeled data sets give shifts of up to 0.09-0.22
+(depending on the cell type), against up to 0.03-0.06 with 74. A larger estimate in the smaller group is in part this noise, and the difference between the groups
+was not tested (a test of the interaction is not available for the expression shifts). In the composition, the
+classical monocytes and the proliferating cells increase in both groups (adjusted p 0.011); the CD4 T cells decrease in
+both, more in the Asian patients (log2 loading -1.1 against -0.32), the non-classical monocytes increase significantly
+only in the Asian patients and the B cells decrease significantly only in the European American patients (-0.67,
+p 0.028). With these group sizes, the data show the same direction of change in both ancestries for every cell type
+that changes significantly in either group; they do not establish that the size differs.
+
+## Flare versus managed disease
+
+```{r flare-table}
+table(sample.meta$disease_state, sample.meta$cohort)
+```
+
+All 13 flare samples were processed in cohort `C3`, which holds only one managed patient; the other 145 managed
+patients are in `C2` and `C4`. Flare versus managed disease is therefore entangled with the processing cohort.
+
+```{r flare-model-cohort}
+cao$excludeSamples(rownames(sample.meta)[!sample.meta$disease_state %in% c("flare", "managed")])
+cao$setModel(~ disease_state + age + ethnicity + (1 | cohort), test = "disease_state: flare vs managed")
+```
+
+With the cohort as a grouping term, the disease state can only be exchanged within `C3`, and there only among the
+Asian donors (four flare patients and the one managed patient; the strata are cohort and ethnicity): 5 of the 159 patients can
+change their value, there are 5 distinct relabelings, and the smallest attainable p-value is 0.2. Nothing can be
+tested. The model report gives this before any analysis is run.
+
+```{r flare-sample-maps, fig.width=10, fig.height=5}
+cowplot::plot_grid(
+  cao$plotSampleDistances(color.by = "cohort", shape.by = "disease_state"),
+  cao$plotSampleDistances(cell.type = "cM", color.by = "cohort", shape.by = "disease_state"), ncol = 2)
+```
+
+The sample maps of the patients make the entanglement visible: the flare samples (circles, all in cohort `C3`, green)
+lie in one region of each map, overlapping with some managed patients of `C2` and `C4`, and the one managed patient
+of `C3` (green triangle) lies among them. The cohort explains 16 % of the distances, the disease
+state 4-5 %; on the map one cannot tell which of the two separates the flare samples.
+
+Without the grouping term the contrast can be tested, but whatever differs between cohort `C3` and the others becomes
+part of the flare effect.
+
+```{r flare-model}
+cao$setModel(~ disease_state + age + ethnicity, test = "disease_state: flare vs managed")
+cao$estimateCellLoadings(name = "coda.flare")
+cao$estimateExpressionShiftMagnitudes(name = "shifts.flare")
+```
+
+```{r flare-plots, fig.width=15, fig.height=5.2}
+cowplot::plot_grid(cao$plotCellLoadings(name = "coda.flare", center = "none"),
+                   cao$plotExpressionShiftMagnitudes(name = "shifts.flare", show.ci = TRUE), ncol = 2, rel_widths = c(1, 1.3))
+```
+
+Without the cohort, flare and managed disease differ in the expression of every major population (adjusted p 0.002),
+with larger normalized shifts (0.13-0.24) than between SLE and healthy donors; in the composition only the conventional
+dendritic cells are depleted (0.044).
+
+Whether these differences belong to the flare or to the processing cohort can be checked on the healthy donors, who
+have no disease state: the 7 healthy donors of `C3` against the 92 of the other cohorts, with the same covariates.
+
+```{r cohort-healthy}
+cao$excludeSamples(NULL)
+sample.meta$cohort.C3 <- factor(ifelse(sample.meta$cohort == "C3", "C3", "other"), levels = c("other", "C3"))
+cao$sample.meta <- sample.meta
+cao$excludeSamples(rownames(sample.meta)[sample.meta$condition != "Healthy"])
+cao$setModel(~ cohort.C3 + age + ethnicity, test = "cohort.C3: C3 vs other")
+cao$estimateCellLoadings(name = "coda.c3.healthy")
+cao$estimateExpressionShiftMagnitudes(name = "shifts.c3.healthy")
+```
+
+```{r cohort-healthy-compare}
+sh <- function(nm) { r <- cao$test.results[[nm]]$results; r <- r[r$effect == "shift", ]; setNames(r$padj, r$celltype) }
+lo <- function(nm) { x <- cao$test.results[[nm]]$contrast; data.frame(loading = x$loadings$obs / log(2), padj = x$per_cell$padj[names(x$loadings$obs)]) }
+ct <- union(names(sh("shifts.flare")), names(sh("shifts.c3.healthy")))
+data.frame(shift.padj.flare = signif(sh("shifts.flare")[ct], 2), shift.padj.C3.healthy = signif(sh("shifts.c3.healthy")[ct], 2), row.names = ct)
+l1 <- lo("coda.flare"); l2 <- lo("coda.c3.healthy")[rownames(l1), ]
+data.frame(loading.flare = signif(l1$loading, 2), padj.flare = signif(l1$padj, 2), loading.C3.healthy = signif(l2$loading, 2), padj.C3.healthy = signif(l2$padj, 2), row.names = rownames(l1))
+```
+
+Healthy donors of cohort `C3` differ from the other healthy donors in the expression of all seven populations (adjusted
+p 0.003-0.006); their composition does not differ. The expression differences between flare and managed disease are
+therefore of the kind that the processing cohort alone produces, and these data cannot attribute them to the flare. The
+composition difference (the depletion of `cDC`) is not seen between the cohorts in healthy donors, but 7 healthy donors
+of `C3` give that comparison little power. A design that separates the two would need flare and managed samples within
+the same cohorts.
+
+## Plasmacytoid dendritic cells and age in healthy donors
+
+```{r healthy-age}
+cao$excludeSamples(NULL)
+cao$excludeSamples(rownames(sample.meta)[sample.meta$condition != "Healthy"])
+cao$setModel(~ age + sex + ethnicity + (1 | cohort), test = "age", numeric.step = 10)
+cao$estimateCellLoadings(name = "coda.healthy.age")
+x <- cao$test.results$coda.healthy.age$contrast
+signif(data.frame(loading.per.decade = x$loadings$obs / log(2), padj = x$per_cell$padj[names(x$loadings$obs)])[order(x$per_cell$padj[names(x$loadings$obs)]), ], 2)
+```
+
+```{r healthy-age-samples, fig.width=13, fig.height=4.5}
+cao$plotCodaSamples(name = "coda.healthy.age", n.top = 4)
+```
+
+Among the 99 healthy donors, age is tested per decade, adjusted for sex and ethnicity and relabeled within cohorts.
+No cell type changes significantly (adjusted p 0.25 or more); the pDC fraction declines by about 0.14 log2 units per
+decade, a trend in the expected direction that these donors cannot confirm. These data therefore give no evidence that
+the pDC result of the main comparison is an age effect, but they cannot exclude a part of it; in the composition
+sensitivity above, removing age from the model does not make the pDC depletion significant.
+
+```{r restore}
+cao$excludeSamples(NULL)
+```
+
+## Summary
+
+- SLE versus healthy donors, adjusted for age and ethnicity and relabeled within processing cohorts: the classical
+  monocytes and proliferating cells expand, the CD4 T cells, B cells and NK cells contract, and all seven major
+  populations shift in expression, the classical monocytes and CD4 T cells most.
+- The processing cohort is the largest structured source of variation in the expression (variance partition, sample
+  maps), but it is spread across the conditions, and ignoring it changes little for SLE versus healthy.
+- The covariates matter for the plasmacytoid dendritic cells: their depletion is significant in three of the six models
+  (without the adjustment for ethnicity, without relabeling within cohorts, or with sex added) and lies near the
+  threshold, and their expression shift is significant only without covariates and grouping term. Among the healthy
+  donors their fraction shows a decline with age that is not significant. The other results are stable across the six
+  models, except the NK depletion, which is significant only in the models that adjust for age, and the cDC depletion,
+  which is significant only without ethnicity.
+- The patients are more heterogeneous than the healthy donors in all seven populations tested, and the increased expression is led
+  by the interferon response in all seven, and the leading decreased gene set is cytoplasmic translation.
+- Flare versus managed disease cannot be separated from the processing cohort: with the cohort as a grouping term no
+  test is possible (5 relabelings), and without it the expression differences are as broad as those that the cohort
+  alone produces among healthy donors (all seven populations) and in the T and B cells of similar size (normalized
+  shifts 0.17-0.19 for `C3` against the other healthy donors, 0.16-0.23 for flare against managed disease); in the
+  monocytes and NK cells the cohort difference among healthy donors is smaller (0.06-0.13 against 0.13-0.24).
+
+## Session info
+
+```{r session}
+sessionInfo()
+```

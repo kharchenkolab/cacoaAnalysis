@@ -1,0 +1,567 @@
+---
+title: "Cutaneous squamous cell carcinoma: tumor versus matched normal skin"
+author: "Cacoa developers"
+date: "`r Sys.Date()`"
+output:
+  github_document:
+    toc: yes
+params:
+  data.file: ""      # scc_refreshed.rds built by prepare_scc_data.R (the Conos object of the Cacoa preprint + its annotation); empty = do not evaluate
+  cell.meta: "/home/viktor_petukhov/projects/cacoaAnalysis/data/SCC/cell_metadata.txt"
+  n.cores: 24
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(eval = file.exists(params$data.file), purl = FALSE, fig.width = 8, fig.height = 4.5, dpi = 110,
+                      message = FALSE, warning = TRUE, comment = "")
+```
+
+Ji et al. (2020, Cell) profiled cutaneous squamous cell carcinoma (cSCC) and matched normal skin of the same patients
+by scRNA-seq. The object used here is the one of the Cacoa preprint: 39,074 cells of 17 samples from 10 patients after
+the preprint's filtering (cells with a mitochondrial fraction above 0.1, the cells annotated `Multiplet` and the cluster
+annotated `Keratinocyte` removed, as in the study; three samples with fewer than 500 cells left out, `P4_Normal`,
+`P8_Normal` and `P3_Tumor`): 7 patients contribute a tumor and a normal sample, three (P3, P4, P8) one sample only. The
+annotation is the paper's level-2 annotation with the
+tumor and normal keratinocyte states merged into `KC_Basal`, `KC_Cyc` and `KC_Diff`, so that keratinocytes can be
+compared between the conditions; the tumor-specific keratinocytes (`TSK`) remain a separate, tumor-only population.
+
+The contrast of interest is **tumor versus normal skin**, with `~ condition + (1 | patient)` as the model: the pairing
+by patient enters as a grouping term, which restricts the relabeling of the condition to within patients. Two technical
+sample summaries are not in the model; the relevance of the pairing and of the summaries is examined at every step:
+design check, covariate screen, variance partition, sensitivity of the main result to adding them, a comparison of the
+ways to model the pairing, and sample-distance plots colored by patient.
+
+```{r libs}
+library(cacoa)
+library(ggplot2)
+library(dplyr)
+```
+
+## Load data
+
+`prepare_scc_data.R` (next to this notebook) refreshes the Conos object of the Cacoa preprint and stores it with the
+annotation and the embedding. The sample metadata is built from the paper's cell metadata, restricted to the
+cells of the object: one row per sample with the condition, the patient (the pairing) and two technical summaries,
+the number of cells and the median UMI count per cell.
+
+```{r load}
+scc <- readRDS(params$data.file)
+cell.meta <- read.delim(params$cell.meta, check.names = FALSE)[names(scc$cell.groups), ]
+sample.meta <- cell.meta %>%
+  group_by(sample = paste(patient, tum.norm, sep = "_")) %>%
+  summarise(condition = first(tum.norm), patient = first(patient), n.cells = n(), median.umi = median(nCount_RNA)) %>%
+  tibble::column_to_rownames("sample")
+sample.meta
+```
+
+The constructor classifies the metadata columns. `patient` has 10 levels for 17 samples and is set aside as
+"high-cardinality": it is not screened by default, but it can be named explicitly (below), and the design check
+recognizes it as the pairing factor.
+
+```{r construct, message=TRUE}
+cao <- Cacoa$new(scc$con, sample.metadata = sample.meta, cell.groups = scc$cell.groups, sample.per.cell = scc$sample.per.cell,
+                 embedding = scc$embedding, n.cores = params$n.cores)
+```
+
+```{r options}
+cao$setOptions(n.permutations = 999, seed = 1)
+cao$plot.params <- list(size = 0.2, alpha = 0.2, font.size = c(2, 3))
+cao$sample.groups.palette <- c(Normal = "#4575b4", Tumor = "#d73027")
+```
+
+The condition palette is named so that the plots made before the model is set use the same two colors as the ones
+made after it.
+
+```{r embedding, fig.width=11, fig.height=5}
+cowplot::plot_grid(cao$plotEmbedding(color.by = "cell.groups", title = "cell type"),
+                   cao$plotEmbedding(color.by = "condition", title = "condition", mark.groups = FALSE, show.legend = TRUE), ncol = 2)
+```
+
+The keratinocyte compartment separates by condition on the embedding (normal keratinocytes on the left of `KC_Diff`
+and `KC_Basal`, tumor keratinocytes toward the right); the immune and stromal populations mix more.
+
+## Check the design
+
+The check recognizes the pairing: every patient holds at most one sample per condition, which makes `patient` a
+blocking factor rather than a covariate, and permutations within patient (`block.vars = "patient"`) are suggested.
+The median UMI count is higher in the tumor samples (association 0.36; 0.20 for the number of cells), which the check flags for the sensitivity analysis.
+
+```{r check-design}
+cao$checkDesign(test = "condition")
+```
+
+```{r plot-design-balance, fig.width=9, fig.height=3.2}
+cao$plotDesign("balance")
+```
+
+## Screen covariates
+
+The screen tests every usable covariate against the sample-to-sample expression distances of each cell type. Two
+tumor-only populations, `TSK` and `PDC`, have enough samples for the screen but a constant condition among them;
+the screen skips the condition there and says so.
+
+```{r screen}
+cao$screenCovariates(n.permutations = 199)
+```
+
+```{r plot-screen, fig.width=9, fig.height=3.5}
+cao$plotCovariateScreen()
+```
+
+The condition dominates: a significant location association in 10 of 14 cell types (no covariate has a significant dispersion association in the partial mode). The number of cells per sample has no partial association; the median UMI count is associated with the cell types only marginally (its marginal association is explained by the other covariates), but has the largest partial association with the composition (adj. R2 0.32). The screen suggests no addition to `~ condition`; the sensitivity analysis below shows what the additions would change.
+
+The patient can be screened when named explicitly. With its 9 degrees of freedom the partial mode has no residual
+degrees of freedom left in any cell type and falls back to the marginal test, where the patient explains nothing
+on its own (median chance-corrected R2 about 0, no cell type significant). With 17 samples the partial mode falls back to the marginal test in the summaries as well: over all cell types the condition leads (adj. R2 0.24), in the composition the patient (0.42, the median UMI count 0.17):
+
+```{r screen-patient}
+cao$screenCovariates(covariates = c("condition", "patient", "n.cells", "median.umi"), n.permutations = 199,
+                     name = "covariate.screen.patient")
+```
+
+Its suggested model differs from the first screen's (`~ condition + median.umi` against `~ condition`): the
+suggestion depends on the covariate set, one more reason to keep `~ condition` and to look at the alternatives in the
+sensitivity analysis instead.
+
+The variance partition asks how much of the between-sample variation is condition, how much is patient, and how much
+is shared (the tumor-only and sparse populations, with no residual degrees of freedom once the 10-level patient factor
+is in, are skipped).
+
+```{r plot-varpart, fig.width=9, fig.height=4}
+cao$plotVariancePartition(c("condition", "patient"))
+```
+
+The patient's unique fraction is comparable to the condition's in most cell types and larger in the endothelial cells and `MDSC` (three to five times the condition's), the melanocytes and the pilosebaceous cells; the condition leads in the keratinocyte states (0.30-0.43), the fibroblasts, T cells and `CLEC9A`. The "shared" fractions reflect the 10-level factor in 9-15 samples (few residual degrees of freedom), not a confounding, since every patient has at most one sample per condition.
+
+### Sample maps
+
+The maps show the samples in two dimensions (MDS of the sample distances) for one cell type, for all cell types combined, or for the cell-type composition; the subtitles give the chance-corrected R² and permutation p-value of each color and shape variable on its own (the screen's marginal mode; the screen's summary lines print the partial mode where the degrees of freedom allow it).
+
+The sample distances of one cell type, averaged over all cell types, and the composition, colored by the patient with
+the condition as the shape. The condition separates the arms along the first axis (adj. R² 0.41 in `KC_Diff`, 0.24 over all cell types), and the second axis orders both arms in nearly the same patient order: the pairing. On its own the patient explains nothing (adj. R² below zero), because the condition takes most of the variation; its share with the condition accounted for is the patient fraction of the variance partition above (the screen’s partial mode has no room with 17 samples). In the composition the arms overlap more (adj. R² 0.12) and the patient explains most (0.42): most normal samples lie close together, the tumors spread around them.
+
+```{r plot-sample-distances, fig.width=15, fig.height=4}
+cowplot::plot_grid(cao$plotSampleDistances(cell.type = "KC_Diff", color.by = "patient", shape.by = "condition"),
+                   cao$plotSampleDistances(color.by = "patient", shape.by = "condition"),
+                   cao$plotSampleDistances(space = "composition", color.by = "patient", shape.by = "condition"), ncol = 3)
+```
+
+## Set the model
+
+The reference level is `Normal`, matched by name; the contrast is tumor versus normal. The pairing enters the model as a
+grouping term, `(1 | patient)`: it is not fitted, it restricts the relabeling of the condition to within patients. The
+7 pairs flip their labels (128 arrangements), and the three patients with one sample (`P3_Normal`, `P4_Tumor`,
+`P8_Tumor`) exchange their labels among themselves as whole patients (3 arrangements of one normal and two tumor
+labels): 384 relabelings, so the smallest attainable p-value is 1/384 = 0.0026. The section "What the pairing changes"
+below compares this model with the unpaired one and with the patient as a fitted factor.
+
+```{r set-model}
+cao$setModel(~ condition + (1 | patient), test = "condition")
+```
+
+## Expression shifts per cell type
+
+For every cell type, each sample's cells are pooled into a profile, and two questions are asked. Whether the type
+changed is tested gene by gene (the contrast of each gene over its standard error, the gene z-scores combined
+adaptively; `statistic = "gsd"`), with permutation p-values adjusted across cell types. How much it changed comes from a
+model of the sample-to-sample distances: `shift` is the distance between the arm means relative to the within-arm
+spread, `var` the log2 ratio of the arm dispersions at equal cell numbers (tested by the distance model), `total` the
+combination.
+
+```{r shifts}
+res <- cao$estimateExpressionShiftMagnitudes()
+res
+```
+
+Three populations are not tested: `TSK`, `PDC` and `B Cell` occur in tumor samples only. Cell types are tested in the
+samples with at least 5 cells (`n`), and their magnitudes come from the samples with at least 10 (`n.mag`), because a
+profile of a handful of cells is mostly sampling noise, which shrinks the distance-based shift; `ASDC`, eccrine and NK
+cells have too few such samples and are tested without a magnitude. Of the 16 tested, 13 show a significant shift
+(`ASDC` among them). The keratinocytes change most (`KC_Diff`, `KC_Cyc`, `KC_Basal`, normalized shift 0.9-1.4),
+followed by the fibroblasts (0.75) and a group of similar size: T cells, macrophages, Langerhans cells, pilosebaceous cells and `CD1C` dendritic cells (0.48-0.58); melanocytes, `CLEC9A` and endothelial cells shift less, and `MDSC` (adjusted p 0.065), eccrine cells and NK cells do not reach significance.
+
+```{r plot-shifts-full, fig.width=9, fig.height=5.4}
+cao$plotExpressionShiftMagnitudes(show.ci = TRUE, show.genes = TRUE)
+```
+
+Cell types are ordered by the size of the shift; filled points have a significant shift by the gene-level test, the gray
+band is the range of the shift with shuffled labels, and the intervals are the jackknife 95 % intervals, which show how
+firmly the samples determine the size (widest for the T cells, `KC_Diff`, the fibroblasts and the melanocytes, the last with 9 samples). The margin counts the genes changed at a gene-level FDR of 10 %; the counts follow the
+shifts but also the numbers of cells (thousands in the abundant keratinocyte states), so they are a cross-check, not a
+ranking.
+
+The dispersion change, compared at equal numbers of cells per sample: the tumor samples of the keratinocyte states, the pilosebaceous cells and the endothelial cells tend to be more similar to each other than the normal samples are (negative `var`), and `CLEC9A` tends to be more heterogeneous in tumors, but no cell type passes the adjustment (adjusted p 0.051-0.054 for these six; the global p of `var` is 0.016). A dagger marks cell types whose numbers of cells are tied to the condition, for which the dispersion test may be anticonservative: `KC_Diff`, `CLEC9A`, the macrophages and `CD1C`.
+
+```{r plot-var, fig.width=8, fig.height=5.4}
+cao$plotExpressionShiftMagnitudes(effect = "var")
+```
+
+### Behind one cell type
+
+`plotShiftDetail()` shows the sample-level picture for one cell type: the samples in the adjusted distance space, the
+distribution of pair distances within and between the arms, and the per-sample dispersion.
+
+```{r plot-shift-detail-2, fig.width=12, fig.height=3.8}
+cao$plotShiftDetail("Fibroblast")
+```
+
+The fibroblast arms are fully separated; `P3_Normal` (the unpaired patient, with the lowest median UMI count of all samples) and `P2_Tumor` are the samples that move the estimate most when left out.
+
+```{r plot-influence, fig.width=8, fig.height=5}
+cao$plotSampleInfluence()
+```
+
+Leaving out single samples changes the shift estimates by less than one jackknife standard error; the largest changes come from `P2_Tumor` and `P4_Tumor` for the melanocytes (in opposite directions), `P10_Normal` for `KC_Basal`, `P3_Normal` for the fibroblasts, and `P8_Tumor` and `P6_Normal` for the T cells.
+
+### Residuals and the technical summaries
+
+```{r residual-maps, fig.width=11, fig.height=4.5}
+cowplot::plot_grid(cao$plotSampleDistances(values = "residual", color.by = "median.umi", shape.by = "condition"),
+                   cao$plotSampleDistances(values = "residual", color.by = "n.cells", shape.by = "condition"), ncol = 2)
+```
+
+```{r residual-diagnostics, fig.width=12, fig.height=6}
+cao$plotFitDiagnostics("expression.shifts", color.by = "median.umi")
+```
+
+The residual maps show the samples on the distances left once the condition is removed (`values = "residual"`),
+colored by the two technical summaries, which are not in the model: the median UMI count explains nothing of them
+(p 0.95), the number of cells a little (3 %, p 0.028). The fit diagnostics colored by the median UMI count show no
+sample far from its fitted position (no cell beyond a log2 distance of 1); the influence of single samples is largest for
+`P10_Normal` in the keratinocyte states and for `P2_Tumor` in the melanocytes and the pilosebaceous cells, as in the
+influence plot above.
+
+## Robustness
+
+The shifts are re-estimated under alternative adjustment sets, given explicitly: each technical summary and the
+patient. The set named `current` is the stored main model, which the verdicts refer to. Each cell type gets two verdicts:
+the size of the shift (the distance-model magnitude: stable, changes by more than half, driven by one sample, or near
+zero when the current shift lies within the noise band of shuffled labels) and its significance (the gene-level test of
+the main result, refitted under every model; filled points).
+
+```{r sensitivity}
+cao$checkSensitivity(covariate.sets = list(current = ~ condition + (1 | patient), "plus n.cells" = ~ condition + n.cells + (1 | patient),
+                                           "plus median.umi" = ~ condition + median.umi + (1 | patient), "unpaired" = ~ condition,
+                                           "patient as a factor" = ~ condition + patient),
+                     n.permutations = 199)
+```
+
+```{r plot-sensitivity, fig.width=10, fig.height=7}
+cao$plotSensitivity()
+```
+
+Adjusting for the technical summaries changes little: every significant cell type stays significant and the sizes move by up to about a fifth (T cells 0.58 to 0.71 with the number of cells, 0.48 with the median UMI count). Adjusting for the patient as a fitted factor (11 parameters for 17 samples, 6 residual degrees of freedom) increases the normalized shifts of six cell types by a half to three quarters (`KC_Diff` 1.37 to 2.4, `KC_Basal` 0.92 to 1.4, the pilosebaceous cells 0.54 to 0.91, also the macrophages, Langerhans cells and `CD1C`) and those of the others by a fifth to two fifths, except `MDSC` (0.10 to 0.31), because the within-arm distances that normalize them shrink once the patient effects are removed; the T-cell shift grows by only a fifth (0.58 to 0.70), so T cells fall from fifth to ninth in size. With the patient as a factor the gene-level test calls no cell type (adjusted p 0.055-0.13 on 6 residual degrees of freedom). `MDSC` is called only with the median UMI count in the model (adjusted p 0.042, against 0.054-0.13 under the other four models), so its call is not robust. In a paired design the two arm dispersions are not
+identifiable once the patient is in the model, so `var` and `total` are reported as `NA` under that model and only the
+shift is compared. A single sample sets the size of one shift: `P2_Tumor` for the melanocytes (see the influence plot).
+
+## Composition
+
+Compositional changes are tested on the same contrast (cell-type loadings of tumor versus normal). As in the preprint,
+the tumor-specific keratinocytes (`TSK`) are left out of this test: they occur in tumor samples only, so their change
+is a property of the annotation rather than a finding (they stay in the cluster-free maps below, where they are tested
+through their neighborhoods). Relative to the geometric mean of all cell types, seven cell types are significant after
+adjustment (adjusted p 0.035-0.047): the tumor-enriched `PDC`, `ASDC`, B cells and macrophages, and the differentiated and
+cycling keratinocytes and the eccrine cells, which take a smaller share of the tumor samples; `CLEC9A` (0.053) and
+`KC_Basal` (0.062) follow. The melanocytes, pilosebaceous and endothelial cells also have negative loadings, without
+passing the adjustment.
+
+```{r loadings, fig.width=13, fig.height=6}
+cao$estimateCellLoadings(cells.to.remove = "TSK")
+cao$plotCellLoadings(center = "both")
+```
+
+The left panel shows the loadings relative to the geometric mean of all cell types, the right panel centers them on
+the reference set, the largest block of cell types whose proportions do not change relative to each other (pairwise
+permutation tests of the loading differences). The block spans 8 of the 18 populations (the T, NK and Langerhans cells,
+the macrophages, `CD1C`, `CLEC9A`, the fibroblasts and `MDSC`); `PDC`, `ASDC` and the B cells lie above it, the
+keratinocyte states, the melanocytes and the pilosebaceous, eccrine and endothelial cells below. The filled points and
+p-values are the reference-free test in both panels: the seven cell types named above are significant (adjusted p
+0.035-0.047), `CLEC9A` (0.053) and `KC_Basal` (0.062) follow.
+
+```{r contrast-tree, fig.width=10, fig.height=6}
+cao$plotContrastTree()
+```
+
+The contrast tree explains the compositional shift with as few balances as possible: each node compares the
+geometric-mean proportions of its two sides between the conditions (the log2 ratio, the significance code of its
+adjusted permutation p-value and the share of the shift it explains); the samples' own ratios are shown at the significant nodes,
+and the tiles are the reference-centered loadings. The root balance sets the T cells, macrophages, dendritic cells
+(`CD1C`, `CLEC9A`, `ASDC`, `PDC`) and B cells, which take a larger share of the tumor samples, against the keratinocyte,
+pilosebaceous, eccrine, endothelial and melanocyte populations together with the fibroblasts, `MDSC`, Langerhans and NK
+cells: a log2 ratio of 3.5 that carries 73 % of the shift and passes the adjustment (p 0.0052, adjusted 0.044). The
+next balance, within the second side, sets the fibroblasts, `MDSC`, Langerhans
+and NK cells against the keratinocyte, pilosebaceous, eccrine, endothelial and melanocyte populations and carries 16 %
+(log2 ratio 2.1, p 0.031, adjusted 0.13); the third, the plasmacytoid and `ASDC` dendritic cells and B cells against
+the T cells, macrophages, `CD1C` and `CLEC9A`, carries 7 % (log2 ratio 1.7, p 0.0026, adjusted 0.044). The first and the
+third balance pass the adjustment; two balances explain 89 % of the shift, three 96 %.
+
+```{r predicted-proportions, fig.width=10, fig.height=4.5}
+cao$plotCodaCellTypes(value = "predicted")
+```
+
+The model-predicted proportions at the two conditions do not depend on the reference set (the stars are the per-type
+test relative to the geometric mean, the error bars 95 % intervals of the fitted proportions): the differentiated and basal keratinocytes make up 36 % and 14 % of the cells in
+normal skin against 8 % and 4 % in tumor, while `CD1C` dendritic cells go from 5 % to 23 %, macrophages from 2 % to
+17 % and Langerhans cells from 8 % to 15 %.
+
+
+The same check for the composition: the loadings refitted under alternative covariate sets, with jackknife intervals
+from leaving out each sample.
+
+```{r sensitivity-composition}
+cao$checkSensitivity(analysis = "composition", covariate.sets = list(current = ~ condition + (1 | patient), "plus n.cells" = ~ condition + n.cells + (1 | patient),
+                                           "plus median.umi" = ~ condition + median.umi + (1 | patient), "unpaired" = ~ condition),
+                     n.permutations = 199)
+```
+
+```{r plot-sensitivity-composition, fig.width=10, fig.height=7}
+cao$plotSensitivity(analysis = "composition")
+```
+
+The loadings change little between the models: most estimates under the alternative sets lie within the jackknife
+intervals of the current model. Their significance depends more on the model. The current model, refitted with 199
+relabelings, calls the same 7 cell types as the main fit above. Without the pairing, 3 cell types are significant in
+this refit (`PDC`, `ASDC`, B cells; in the unpaired fit with 999 relabelings in the next section only `PDC`, with `ASDC`
+and the B cells at adjusted p 0.054 and 0.066: they are borderline, and the 199 relabelings of the sensitivity refit
+move them across 0.05). Adding the number of cells leaves no cell type significant: 6 of the 8 normal samples have cell numbers outside
+the range of the tumor samples, so the adjustment rests on a trend fitted beyond the observed values (the design check
+warns of this), and with a continuous covariate and a grouping term the relabeling is approximate. Adding the median
+UMI count makes more types significant (10) and enlarges some loadings (`KC_Basal` from -2.7 to about -5), because it
+is associated with the condition (0.36). Neither technical summary structures the residuals of the expression (see
+above), so the paired model without them is the one reported. Four loadings are each set by one sample (`P3_Normal`
+for `KC_Diff` and `KC_Cyc`, `P1_Tumor` for the macrophages and `CLEC9A`).
+
+## What the pairing changes
+
+```{r pairing-models, message=TRUE}
+models <- list(unpaired = ~ condition, paired = ~ condition + (1 | patient), "patient as a factor" = ~ condition + patient)
+for (k in names(models)) {
+  cao$setModel(models[[k]], test = "condition", verbose = FALSE)
+  cao$estimateCellLoadings(cells.to.remove = "TSK", name = paste0("coda.", k), verbose = FALSE)
+  cao$estimateExpressionShiftMagnitudes(name = paste0("shifts.", k), verbose = FALSE)
+}
+cao$setModel(~ condition + (1 | patient), test = "condition", verbose = FALSE)
+cao$estimateCellLoadings(cells.to.remove = "TSK", random.baseline = TRUE, name = "coda.random", verbose = FALSE)
+round(cao$test.results$coda.random$random$icc, 2)   # share of each cell type's log-ratio variance between patients
+```
+
+```{r pairing-composition}
+ct <- names(cao$test.results$coda.unpaired$contrast$loadings$obs)
+cmp <- sapply(c("unpaired", "paired", "random", "patient as a factor"), function(k) cao$test.results[[paste0("coda.", k)]]$contrast$per_cell$padj[ct])
+lo <- sapply(c("unpaired", "paired", "random", "patient as a factor"), function(k) cao$test.results[[paste0("coda.", k)]]$contrast$loadings$obs[ct] / log(2))
+colSums(cmp < 0.05)                                   # cell types with adjusted p < 0.05
+signif(cbind(loading = lo, padj = cmp)[order(cmp[, "paired"]), ], 2)
+```
+
+```{r pairing-samples, fig.width=13, fig.height=8.5}
+cao$plotCodaSamples(name = "coda.paired", n.top = 8, pair.by = "patient")
+```
+
+Each patient's normal and tumor samples are joined by a line. The patients differ widely in the proportions of most
+cell types, but the change from normal to tumor goes the same way in nearly every patient: the differentiated and
+cycling keratinocytes fall, the macrophages and the plasmacytoid dendritic cells rise. Comparing the samples within
+patients removes the differences between patients from the comparison; that is what the grouping term does.
+
+```{r pairing-loadings, fig.width=15, fig.height=6}
+cowplot::plot_grid(cao$plotCellLoadings(name = "coda.unpaired", center = "none", title = "unpaired"),
+                   cao$plotCellLoadings(name = "coda.paired", center = "none", title = "paired (1 | patient)"),
+                   cao$plotCellLoadings(name = "coda.random", center = "none", title = "random intercept per patient"), ncol = 3)
+```
+
+The loadings are identical in the unpaired and the paired model (the grouping term is not fitted) and nearly the same
+with a random intercept (the largest difference, for the melanocytes, -1.5 against -2.2); what changes is how much they
+stand out from the relabeling noise (gray bands). Without the pairing one cell type is significant (`PDC`), with the
+relabeling within patients 7, with a random intercept per patient 9: the random-intercept fit estimates that most of
+the variation of many cell types' log ratios lies between patients (0.76-0.94 for the keratinocyte states, the
+macrophages, the Langerhans, `CD1C` and `CLEC9A` dendritic cells, the melanocytes and `MDSC`; 0 for the tumor-enriched
+`PDC` and `ASDC`) and removes it. Fitting the patient as a factor instead spends 9 of the 16 degrees of freedom and finds
+nothing.
+
+```{r pairing-shifts}
+sh <- function(k) { r <- cao$test.results[[paste0("shifts.", k)]]$results; r <- r[r$effect == "shift", ]; r }
+S <- Reduce(function(a, b) merge(a, b, by = "celltype", all = TRUE), lapply(names(models), function(k) { r <- sh(k)
+  d <- data.frame(celltype = r$celltype, shift = r$estimate.norm, ci.width = (r$ci.high - r$ci.low) * r$estimate.norm / r$estimate, padj = r$padj)   # jackknife 95 % interval, on the normalized scale
+  names(d)[-1] <- paste(names(d)[-1], k, sep = "."); d }))
+S[, -1] <- signif(S[, -1], 2); S[order(S$padj.paired), ]
+colSums(S[, grep("^padj", names(S))] < 0.05, na.rm = TRUE)
+```
+
+For the expression shifts the pairing changes nothing here. The grouping term only restricts the relabeling, so the
+magnitudes and their jackknife intervals are those of the unpaired model, and the same 13 cell types are significant;
+their adjusted p-values are larger (0.014-0.019 against 0.0016-0.021), because the 384 relabelings within patients allow
+a smallest p-value of 0.0026 (the paired p-values are 0.0026-0.016). The unpaired test already gives 10 of these 13 cell
+types its smallest p-value (1/1000), so there is nothing for the pairing to gain here. The patient as a fitted factor makes the normalized shifts larger (the within-group spread
+shrinks once the patients are removed) but leaves 6 residual degrees of freedom, and no cell type is significant.
+
+```{r pairing-de, warning=FALSE}
+# limma-voom fits the grouping term (1 | patient) as a random intercept per patient (limma::duplicateCorrelation); the patient as a
+# fixed factor and the unpaired model for comparison
+de.models <- list(unpaired = ~ condition, "patient as a factor" = ~ condition + patient, "random intercept" = ~ condition + (1 | patient))
+n.de <- sapply(names(de.models), function(k) { cao$setModel(de.models[[k]], test = "condition", verbose = FALSE)
+  de <- cao$estimateDEPerCellType(test = "limma-voom", name = paste0("de.", k), verbose = FALSE)
+  vapply(de, function(x) if (is.null(x$res)) NA_integer_ else sum(x$res$padj < 0.05, na.rm = TRUE), integer(1)) })
+cao$setModel(~ condition + (1 | patient), test = "condition", verbose = FALSE)
+cbind(n.de, within.patient.correlation = round(attr(cao$test.results[["de.random intercept"]], "block.correlation")[rownames(n.de)], 2))[order(-n.de[, "unpaired"]), ]
+```
+
+Differential expression takes its p-values from the fitted model, so the pairing has to enter the model. limma-voom
+fits `(1 | patient)` as a random intercept: one correlation between the two samples of a patient, shared by all genes of
+a cell type and estimated from them (0.06 in `CLEC9A` to 0.30 in the differentiated keratinocytes and pilosebaceous
+cells). With it, more genes are found than without the pairing in every one of the 13 cell types (differentiated
+keratinocytes 3,999 to 4,927, cycling keratinocytes 2,596 to 3,345, Langerhans cells 930 to 1,224). The patient as a
+fixed factor finds fewer genes than the random intercept in 8 cell types (cycling keratinocytes 2,306, fibroblasts 529
+against 987), about as many in the basal keratinocytes (3,332 against 3,321) and many more in four immune populations:
+macrophages (1,754 against 967), T cells (922 against 448), `CLEC9A` (604 against 231) and `MDSC` (415 against 14, and
+none without the pairing). Three of these have small estimated correlations (`CLEC9A` 0.06, T cells 0.09, macrophages
+0.12), but `MDSC` has 0.25, and the fibroblasts, where the fixed factor finds fewer genes, have 0.09, so the size of the
+correlation does not by itself explain the difference. One possible reason, not tested here, is that a single correlation for all genes removes less of the patient differences than a parameter per patient
+when only some genes differ between patients. Which count is closer to the truth cannot be decided from these data;
+the expression-shift test of the main model does not call `MDSC` (adjusted p 0.065).
+
+## Differential expression per cell type
+
+Pseudobulk differential expression with limma-voom on the main model; the grouping term `(1 | patient)` is fitted as a
+random intercept per patient (the same fit as "random intercept" in the previous section). Positive fold changes are
+higher in tumor.
+The tumor-only populations (the contrast is not estimable there) and the sparse `ASDC`, eccrine, NK and B cells are
+skipped; the warnings saying so are hidden in this chunk. Nine of the ten top fibroblast genes are lower in tumor,
+among them dermal fibroblast markers lost in the tumor stroma (`OGN`, `GSN`, `CD34`, `CFD`); `SLC16A3` is the one
+higher in tumor.
+
+```{r de, warning=FALSE}
+de <- cao$estimateDEPerCellType(test = "limma-voom")
+head(de[["Fibroblast"]]$res[, c("Gene", "log2FoldChange", "pvalue", "padj", "CellFrac")], 10)
+```
+
+```{r plot-n-de, fig.width=8, fig.height=4.5}
+cao$plotNumberOfDEGenes()
+```
+
+The number of DE genes follows the expression shifts in part: the keratinocyte states come first (3,300-4,900 at FDR
+5 %), then the pilosebaceous cells (1,672) and the Langerhans cells (1,224), and `MDSC` (14) and the endothelial cells
+(27) come last; the fibroblasts, fourth by the size of the shift, have 987 DE genes, sixth among the 13.
+
+```{r plot-volcano, fig.width=6, fig.height=5}
+cao$plotVolcano(cell.types = "Fibroblast")
+```
+
+## Functional interpretation
+
+Gene set enrichment (GSEA over GO biological processes) on the per-cell-type DE statistics. The collapsed heatmap
+clusters the enriched terms by their shared genes and their enrichment pattern across cell types and labels each
+cluster by the words that recur in its term names (the number before the label is the number of terms in the cluster;
+generic words are excluded). The run is seeded on one core so that the figures are reproducible.
+
+```{r gsea}
+cao$estimateOntology(type = "GSEA", org.db = org.Hs.eg.db::org.Hs.eg.db, seed = TRUE, n.cores = 1)
+```
+
+```{r plot-gsea-up, fig.width=10, fig.height=7}
+cao$plotOntologyHeatmapCollapsed(name = "GSEA", genes = "up", n = 25, clust.method = "ward.D",
+                                 exclude.words = c("regulation", "process", "cell", "cellular", "positive", "negative", "pathway"))
+```
+
+```{r plot-gsea-down, fig.width=10, fig.height=7}
+cao$plotOntologyHeatmapCollapsed(name = "GSEA", genes = "down", n = 25, clust.method = "ward.D",
+                                 exclude.words = c("regulation", "process", "cell", "cellular", "positive", "negative", "pathway"))
+```
+
+Up in tumor: the three keratinocyte states share a block of mitochondrial / ncRNA-biogenesis and purine /
+nucleotide-metabolism terms (the increased metabolism of `KC_Diff` and `KC_Basal` reported in the paper), and a group of immune-response
+clusters (defense and innate response, type I interferon, cytokine response, antigen presentation) runs across the
+myeloid populations (`Mac`, `LC`, `CD1C`, `CLEC9A`), the pilosebaceous keratinocytes and the melanocytes, as in the
+paper (NK cells are not testable here). T cells gain DNA-replication and mitotic cell-cycle terms,
+the proliferation signal of the paper. The immune-cell migration terms reported for NK cells, macrophages and
+Langerhans cells appear in the macrophages and Langerhans cells: the chemotaxis and leukocyte-migration terms fall into
+the cluster labeled "activation, leukocyte, response, ion, mediated", shared by the two types, together with
+leukocyte-activation and calcium-ion terms; a further cluster of ion-homeostasis and ion-transport terms, which also
+holds some macrophage-migration terms, is up in the macrophages only.
+
+Down in tumor: the immune populations (`MDSC`, `LC`, `CD1C`, `CLEC9A`, `Mac`, T cells) and, less strongly, the
+endothelial cells lose cytoplasmic translation terms (and ribosome-biogenesis and translation-initiation terms, most
+strongly in `Mac`; weaker mRNA-processing terms in `Mac` and `LC`), the
+keratinocyte states lose epidermal development and differentiation programs. The per-cell-type dot plot shows the
+ten strongest terms behind one column; for the fibroblasts these are the negative regulation of amyloid-beta formation,
+protein-lipid complex organization, complement activation, sterol and cholesterol transport, lipid and primary-alcohol
+metabolism, among others (the humoral immune response mediated by circulating immunoglobulin and the negative
+regulation of cytoskeleton organization are also lower, adjusted p 0.042 and 0.048, but not among the ten shown).
+
+```{r plot-gsea-fibroblast, fig.width=8, fig.height=7, warning=FALSE}
+cao$plotOntology(cell.type = "Fibroblast", name = "GSEA", genes = "down", n = 10)
+```
+
+## Cluster-free analyses
+
+The two cluster-free maps ask the composition and the expression question in neighborhoods of the cell graph instead of
+in the annotated cell types, so that a change confined to part of a type, or spread across types, is found where it is.
+A neighborhood is a diffusion neighborhood: the cells a heat kernel on the graph reaches from a cell, with the kernel
+strength set so that a typical neighborhood covers a given share of the cells (`scale`). The default `scale = "auto"`
+runs a scan over 1, 3 and 5 % of the cells (for both maps) under the same relabelings, picks the scale whose own map calls the most
+cells (the finest one when a scale calls nearly every cell), and reports the map at that scale alone, so that the q-values and effects of the map belong to one neighborhood
+size; one value tests a single scale, and a vector reports the scan itself. Cells are adjusted by the pooled permutation
+false-discovery rate (the number of cells beyond a threshold under the relabelings, pooled over all cells, against the
+observed number), and the adjusted z-score of a cell is the tail z of its q-value. The chunks print the scales tried and
+the one chosen, and the annotated embedding is drawn next to each map so that the populations can be followed. The thin black
+lines outline the regions where the cells significant at an adjusted p of 0.05 are the majority.
+
+### Cluster-free density shifts
+
+The density map tests, in every neighborhood, whether the arms differ in how many of their cells fall there: each
+sample's kernel density is tested on the log scale with the same model. The panels show the annotation, the effect (the
+log2 fold change of the density) and the adjusted z-scores.
+
+```{r density, fig.width=15, fig.height=4.8, message=TRUE}
+cao$estimateCellDensity(method = "graph")
+cao$estimateDiffCellDensity()
+cowplot::plot_grid(cao$plotEmbedding(color.by = "cell.groups", title = "cell type"),
+                   cao$plotDiffCellDensity(what = "effect", title = "density change (log2 FC)", outline = TRUE),
+                   cao$plotDiffCellDensity(title = "adjusted z", outline = TRUE), ncol = 3)
+```
+
+The scan picks the 5 % scale (neighborhoods of about 2,000 cells), the coarsest of the shared 1, 3 and 5 % set: the changes are broad enough for the widest kernel to call the most cells. The map calls the direction the loadings gave. The tumor-enriched immune populations stand out (`PDC` in 97 % of its cells at FDR 5 %, median log2 fold change +1.8; `B Cell` 81 %, `Mac` 72 %, `ASDC` 64 %, `CLEC9A` 53 %), the gain extends through the `CD1C` dendritic cells (35 %), and the differentiated and basal keratinocytes are depleted (`KC_Diff` in 44 % of its cells, -0.8; `KC_Basal` -0.8 in 44 %). `TSK`, tumor-only, is not called, presumably because its neighborhoods are shared with the depleted `KC_Basal` (not tested). In the per-type summary no cell type passes FDR 5 %: `PDC`, the macrophages, `CLEC9A`, `ASDC`, `CD1C`, `KC_Diff` and `KC_Basal` have adjusted p 0.056 and the B cells 0.062, with the 384 relabelings within patients. The per-cell map resolves what the type-level test does not, at a calibrated error: 33 % of the cells are called at FDR 5 % and 56 % at FDR 10 % (the count in the message).
+
+### Cluster-free expression shifts
+
+The expression map tests the contrast in each neighborhood with the per-gene statistic of the per-type test
+(`statistic = "gsd"`: the contrast of each gene over its standard error, combined adaptively over the genes detected in
+at least 5 % of the neighborhood's cells), on neighborhoods of the scale's size around centers that cover the graph (the message gives their number and size);
+each cell averages the tested neighborhoods that contain it. The shift panel shows the size of the change (the mean
+squared gene z-score of the neighborhood, about 1 without a change) and the right panel the adjusted z-scores, one-sided
+(0 means not significant).
+
+```{r cluster-free-shifts, fig.width=11, fig.height=5, message=TRUE}
+cao$estimateClusterFreeExpressionShifts()
+cao$plotClusterFreeExpressionShifts(adjusted = TRUE, outline = TRUE)
+```
+
+Tumor and normal skin differ in expression everywhere (the scan picks the 1 % scale, 362 neighborhoods of about 400 cells): all 19 types are significant in the per-type summary and 96-100 % of the cells of each type pass FDR 5 % (83 % of the B cells), so the adjusted z-score panel carries no information beyond "changed", and the ordering is in the shift panel (the mean squared gene z-score of the neighborhood, about 1 without a change): largest in the T cells, the fibroblasts and `TSK` (median 2.3-2.4), then the macrophages, NK cells, `KC_Cyc`, `KC_Diff` and `CLEC9A` (2.0-2.2), smallest in the Langerhans, endothelial and eccrine cells and `MDSC` (1.5-1.7). Cells at the boundary between two cell types
+whose composition differs between the arms can show a shift that is a neighborhood effect (the neighborhood's
+cell-type mix differs between tumor and normal samples) rather than a change within one cell type.
+
+Both maps are summarized per cell type by an exact group-level permutation test: the mean per-cell statistic of the type
+is compared with the same mean under the relabelings shared by all cells, so the dependence between neighboring cells is
+carried along, and the result is adjusted across types. The labels give the share of the type's cells called at FDR 5 %.
+
+```{r cluster-free-summary, fig.width=11, fig.height=4.5}
+cao$estimateClusterFreeSummary("cell.density")
+cao$estimateClusterFreeSummary("cluster.free.expr.shifts")
+cowplot::plot_grid(cao$plotClusterFreeSummary("cell.density"), cao$plotClusterFreeSummary("cluster.free.expr.shifts"), ncol = 2)
+```
+
+## Summary
+
+- Tumor versus normal skin is a strong contrast in almost every population: 13 of 16 testable cell types show a
+  significant expression shift, led by the keratinocyte states, then fibroblasts, T cells, Langerhans cells,
+  pilosebaceous cells, dendritic cells and macrophages; the tumor-only populations show up in the composition instead, where the paired test calls seven cell types (`PDC`, `ASDC`, the B cells and macrophages up, `KC_Diff`, `KC_Cyc` and the eccrine cells down; `TSK` is left out of that test), and the density map calls most cells of `PDC`, the B cells, the macrophages, `ASDC` and `CLEC9A` (enriched) and 44 % of the differentiated and basal keratinocytes (depleted), although its per-type summary passes FDR 5 % for no cell type (adjusted p 0.056-0.062). The pseudobulk DE broadly agrees
+  (keratinocyte states first, `MDSC` and endothelial cells last), and the cluster-free map finds every population changed; GSEA shows metabolic activation in the keratinocyte states, an
+  immune-response program across the myeloid populations, pilosebaceous cells and melanocytes, and proliferation
+  in T cells.
+- The tumor samples of the keratinocyte states, the pilosebaceous and the endothelial cells tend to be more similar to each other than the normal samples are (a negative dispersion change at equal cell numbers), `CLEC9A` more heterogeneous; none of these changes passes the adjustment (adjusted p 0.051-0.054).
+- The patient pairing is a sizable second source of variation: its unique fraction is comparable to the condition's in most cell types and larger in several, it explains most of the composition (adj. R² 0.42), and the sample maps order both arms by patient along the second axis. As a fitted factor it leaves only 6 residual degrees of freedom, and with it in the model no cell type is called, in the expression shifts or in the composition; as a grouping term it restricts the relabeling to 384 arrangements (the label flips of the 7 pairs, combined with exchanges among the three patients with one sample), calls the same 13 of 16 cell types as the unpaired model in the expression shifts, and 7 cell types in the composition against 1 without the pairing. The technical summaries (cells per sample, median UMI) are mildly associated with the condition and
+  adjusting for them changes little.
+
+## Session info
+
+```{r session-info}
+sessionInfo()
+```

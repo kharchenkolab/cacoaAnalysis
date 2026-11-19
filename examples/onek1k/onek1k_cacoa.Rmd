@@ -1,0 +1,434 @@
+---
+title: "Cacoa on OneK1K: age as a continuous variable"
+author: "Cacoa developers"
+date: "`r Sys.Date()`"
+output:
+  github_document:
+    toc: yes
+params:
+  data.file: ""      # onek1k_harmony_seurat.rds built by prepare_onek1k_harmony.R (200 donors); empty = do not evaluate
+  meta.file: ""      # onek1k_harmony_seurat_sample_meta.rds written next to it
+  n.cores: 16
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(eval = nzchar(params$data.file), message = FALSE, warning = FALSE, fig.path = "onek1k_cacoa_files/figure-gfm/", dpi = 90, comment = "")
+```
+
+Yazar et al. (2022, Science) profiled peripheral blood mononuclear cells of 981 healthy donors aged 19 to 97 by
+scRNA-seq (10x, OneK1K). Donors were processed in pools, several donors per library, and assigned back to their cells
+by genotype. This notebook uses 200 of the donors, 20 from each of ten age bins that each hold a tenth of the cohort's donors
+(so the ages follow the cohort's distribution: median 67, nine donors aged 30 or younger) and evenly from the sexes (100 women, 100 men), at most 800 cells per donor: 158,866 cells in 22 populations of the
+authors' annotation (rare populations merged), on a kNN graph of a Harmony embedding (`prepare_onek1k_harmony.R`,
+next to this notebook). The 200 donors come from 70 pools of one to seven donors.
+
+The tested variable is **age**, a continuous variable: every result is a change per decade of age. Sex is a
+covariate, and the pool is a grouping term, so that age is only compared among donors processed together. In short:
+naive CD8 and CD4 T cells decline with age and cytotoxic and effector-memory populations (CD8 effector memory, CD4
+cytotoxic, NK cells) and CD16 monocytes increase, and the expression of most T and NK populations shifts. With age
+shuffled among the donors (three shuffles, run outside this notebook), the composition test, the test of each cell
+type's expression shift and the density map call nothing; the expression-shift map calls cells in two of the three
+shuffles (see the cluster-free section).
+
+```{r libs}
+library(cacoa)
+library(ggplot2)
+```
+
+## Load data
+
+```{r load}
+seu <- readRDS(params$data.file)
+samples <- sort(unique(seu$sample))
+sample.meta <- readRDS(params$meta.file)[samples, c("age", "sex", "pool")]
+sample.meta$n.cells <- as.vector(table(seu$sample)[samples])   # cells per donor in this object (at most 800)
+sample.meta$pool <- factor(sample.meta$pool)
+summary(sample.meta)
+table(seu$celltype)
+```
+
+`pool` has 70 levels for 200 donors; the constructor sets it aside from the screen as high-cardinality, and it enters
+the model below as a grouping term.
+
+```{r construct, message=TRUE}
+cao <- Cacoa$new(seu, sample.metadata = sample.meta, sample.per.cell = factor(seu$sample), cell.groups = factor(seu$celltype),
+                 embedding = seu@reductions$umap@cell.embeddings, graph.name = "RNA_nn", data.layer = "data", n.cores = params$n.cores)
+cao$setOptions(n.permutations = 499, seed = 1)
+cao$plot.params <- list(size = 0.1, alpha = 0.1, font.size = c(2, 3))
+```
+
+```{r embedding, fig.width=11, fig.height=5}
+cowplot::plot_grid(cao$plotEmbedding(color.by = "cell.groups", title = "cell type"),
+                   cao$plotEmbedding(color.by = "age", title = "age", mark.groups = FALSE, show.legend = TRUE), ncol = 2)
+```
+
+## Check the design
+
+```{r check-design}
+cao$checkDesign(test = "age")
+```
+
+Age and sex are not associated (the donors were drawn evenly over both). Ages within a pool are more similar than
+between pools (58 % of the age variance lies between pools, against about 35 % for pools drawn at random), so the pool is a candidate confounder, which the grouping
+term handles.
+
+```{r plot-design, fig.width=10, fig.height=5}
+cao$plotDesign("balance")
+```
+
+```{r plot-design-assoc, fig.width=6, fig.height=5}
+cao$plotDesign("associations")
+```
+
+## Screen covariates
+
+```{r screen}
+cao$screenCovariates(n.permutations = 199)
+```
+
+```{r plot-screen, fig.width=10, fig.height=6}
+cao$plotCovariateScreen()
+```
+
+```{r plot-screen-summary, fig.width=8, fig.height=4}
+cao$plotCovariateSummary()
+```
+
+Sex is associated with the expression of 16 of 19 screened cell types, age with 11; age explains more of the
+composition (adjusted R2 0.06) than sex (0.01).
+
+```{r variance-partition, fig.width=10, fig.height=5}
+cao$plotVariancePartition(c("age", "sex"))
+```
+
+The variance partition splits the between-donor variation of each cell type's expression into the parts explained by
+age and by sex alone, a shared part and a residual. Both shares are small: sex explains up to about 5 % (in the naive
+and central-memory CD4 T cells), age up to about 2 %. Most of the variation between donors is not explained by either;
+an age effect is detected here because 200 donors give power to small, consistent changes.
+
+### Sample maps
+
+```{r sample-maps, fig.width=15, fig.height=5}
+cowplot::plot_grid(
+  cao$plotSampleDistances(cell.type = "CD8 Naive", color.by = "age", shape.by = "sex"),
+  cao$plotSampleDistances(color.by = "age", shape.by = "sex"),
+  cao$plotSampleDistances(space = "composition", color.by = "age", shape.by = "sex"), ncol = 3)
+```
+
+The sample maps place the donors by the distances between their profiles: of the naive CD8 T cells (left), of all
+cell types together (middle) and of the composition (right). The subtitles give the share of the distances explained by
+each variable and its permutation p-value. Age explains 6 % of the composition distances but only 1 % of the expression
+distances; the donors do not separate visibly by age on any of the maps. Age thus accounts for a larger share of the
+differences between donors in composition than in expression; the two shares come from different spaces and are not a
+direct comparison of effect sizes.
+
+
+## Set the model
+
+```{r set-model}
+cao$setModel(~ age + sex + (1 | pool), test = "age", numeric.step = 10)   # effects per decade
+```
+
+With a continuous tested variable the contrast is a step of `numeric.step` units of it: here 10 years, so loadings
+and shifts are changes per decade. Within the pools the ages are exchanged among the donors of the same sex. Pools
+with a single donor are exchanged as wholes among themselves; 27 donors keep their age in every relabeling.
+
+## Composition
+
+```{r loadings, fig.width=13, fig.height=6.5}
+cao$estimateCellLoadings()
+cao$plotCellLoadings(center = "both")
+```
+
+The loadings are the change of each population's log proportion per decade. Naive CD8 T cells decline most (about
+0.6 log2 units per decade relative to the reference populations, 1.5-fold), naive CD4 T cells decline, and CD16
+monocytes, cytotoxic CD4 T cells, NK cells and CD8 effector-memory cells increase (adjusted p 0.007 for all six).
+
+```{r loadings-table}
+lo <- cao$test.results$coda$contrast$per_cell
+data.frame(p = signif(lo$pval, 2), padj = signif(lo$padj, 2))[order(lo$pval), ][1:12, ]
+```
+
+```{r coda-samples, fig.width=13, fig.height=8.5}
+cao$plotCodaSamples(n.top = 8)
+```
+
+The per-donor proportions show what the loadings summarize: the naive CD8 fraction falls from about 12 % of the cells
+in donors aged 30 or younger (median of nine donors) to about 1-2 % above 70, with a wide spread at every age; for the populations that increase
+the trend is shallower than the spread between donors of the same age.
+
+```{r contrast-tree, fig.width=11, fig.height=7}
+cao$plotContrastTree()
+```
+
+The contrast tree summarizes the composition change by successive splits of the cell types into two groups, each
+with the change of the balance between them (log2 per decade, with its share of the total change). The first split
+(+0.28 per decade, 54 % of the change) separates the populations that decline with age (naive CD8 and CD4 T cells,
+MAIT cells, B cells, CD8 central-memory cells) from those that increase (CD16 and CD14 monocytes, NK cells, CD8
+effector-memory and cytotoxic CD4 T cells); populations with loadings near zero fall on both sides. Within the declining group, the naive CD8 T cells separate from the rest
+(+0.48, 27 %): their decline is the largest single component.
+
+```{r coda-diagnostics, fig.width=12, fig.height=7}
+cao$plotFitDiagnostics("composition")
+```
+
+The fit diagnostics show, for every donor and cell type, the studentized residual of the log ratio (left) and how
+much the loading changes when the donor is left out (right). A few donors lie more than three residual standard
+deviations from the fit in single cell types (dots), but no donor changes any loading by a standard error: the
+composition result does not rest on single donors.
+
+```{r sensitivity-composition, fig.width=11, fig.height=8}
+cao$checkSensitivity(analysis = "composition", n.permutations = 199)
+cao$plotSensitivity(analysis = "composition")
+```
+
+The composition is refitted without sex and without the grouping term. The six populations of the main result stay
+significant in all three models with the same loadings. Four more (MAIT cells, CD14 monocytes, intermediate and memory B
+cells) become significant when sex is left out or when the pool is ignored, and the CD4 central-memory T cells when sex is
+left out: their loadings are small, within the range of shuffled labels, and their significance depends on the model.
+For the four, leaving out either term is enough; for the pool, a
+possible reason (not tested) is that donors of similar age were processed together.
+
+
+## Expression shifts per cell type
+
+```{r shifts, message=TRUE}
+res <- cao$estimateExpressionShiftMagnitudes()
+res
+```
+
+```{r plot-shifts, fig.width=9, fig.height=5.2}
+cao$plotExpressionShiftMagnitudes(show.ci = TRUE, show.genes = TRUE)
+```
+
+12 of 22 populations shift in expression with age (gsd, adjusted p < 0.05): all CD4 and CD8 T populations except the
+naive CD8 cells, the NK and gamma-delta T cells, the regulatory T cells, CD16 monocytes and two B populations. The
+normalized shifts per decade are small (at most 0.003: the distance between the expected profiles of donors ten years
+apart, relative to the spread between donors of the same age), but consistent across many genes; the naive CD4 T cells
+have the largest significant shift and the most genes changing (bars on the right).
+
+```{r top-genes}
+g <- cao$test.results$expression.shifts$genes[[1]]
+sig <- res$results$celltype[res$results$effect == "shift" & res$results$padj < 0.05]
+lapply(g[intersect(sig, names(g))], function(x) head(x[, c("gene", "beta", "z")], 10))
+```
+
+The genes with the largest age effect in the naive CD4 T cells include LRRN3 and NOG, which decrease with age, as
+reported in whole-blood expression studies of aging; in the NK cells, PTGDS increases and XCL2 decreases.
+
+```{r plot-shifts-var, fig.width=9, fig.height=5.2}
+cao$plotExpressionShiftMagnitudes(effect = "var")
+```
+
+The dispersion effect asks whether donors become more or less different from each other with age, cell type by
+cell type. Only the naive CD8 T cells change significantly (adjusted p 0.038, more dispersed at older ages); the dagger
+marks that their cell numbers per donor depend on age (they decline), which can make this test anticonservative.
+
+### Behind one cell type
+
+```{r shift-detail, fig.width=12, fig.height=8}
+cao$plotShiftDetail("CD4 Naive")
+```
+
+The detail of one cell type shows the donors on the distances of their naive CD4 T cell profiles after removing
+sex (left), and each donor's dispersion against age (right). The age effect is not visible as a separation on the
+map: it is a small shift shared by many genes, which the gene-level test accumulates. The dispersion rises slightly
+with age, a trend that is not significant (adjusted p 0.076).
+
+```{r sample-influence, fig.width=11, fig.height=8}
+cao$plotSampleInfluence()
+```
+
+```{r shift-diagnostics, fig.width=12, fig.height=7}
+cao$plotFitDiagnostics("expression.shifts")
+```
+
+The fit diagnostics of the expression shifts show no donor far from its fitted position, and the influence of
+single donors is below a standard error everywhere except in the plasmablasts, where few donors have enough cells.
+
+### Robustness to the covariates
+
+```{r sensitivity}
+cao$checkSensitivity(n.permutations = 199)
+```
+
+```{r plot-sensitivity, fig.width=11, fig.height=9}
+cao$plotSensitivity()
+```
+
+The sensitivity analysis refits the shifts without sex and without the grouping term, with jackknife intervals
+(error bars) and the range of the leave-one-out estimates (light bands). Eleven populations are significant in all
+three models and five in none. The naive CD8 and naive B cells are significant only without sex or without the pool; the cytotoxic CD4 T cells
+lose significance when the pool is ignored. The magnitudes of these three change by at most 7 % between models, so
+these differences are differences of significance near the threshold, not of the size of the effect.
+
+
+## Age as a continuous variable against age groups
+
+A common alternative is to split the donors into age groups. Here the same donors and model, with age replaced by a
+split at the median (`old` against `young`).
+
+```{r age-groups}
+sample.meta$age.group <- factor(ifelse(sample.meta$age > median(sample.meta$age), "old", "young"), levels = c("young", "old"))
+cao$sample.meta <- sample.meta
+cao$setModel(~ age.group + sex + (1 | pool), test = "age.group")
+cao$estimateCellLoadings(name = "coda.groups", verbose = FALSE)
+cao$estimateExpressionShiftMagnitudes(name = "shifts.groups", verbose = FALSE)
+pc <- function(nm) cao$test.results[[nm]]$contrast$per_cell$padj
+ct <- names(pc("coda")); cp <- cbind(continuous = pc("coda")[ct], groups = pc("coda.groups")[ct]); colSums(cp < 0.05)
+sh <- function(nm) { r <- cao$test.results[[nm]]$results; r <- r[r$effect == "shift", ]; setNames(r$padj, r$celltype) }
+cs <- names(sh("expression.shifts")); ss <- cbind(continuous = sh("expression.shifts")[cs], groups = sh("shifts.groups")[cs]); colSums(ss < 0.05, na.rm = TRUE)
+signif(cbind(composition = cp[order(cp[, "continuous"]), ]), 2)[1:10, ]
+signif(ss[order(ss[, "continuous"]), ], 2)
+cao$setModel(~ age + sex + (1 | pool), test = "age", numeric.step = 10, verbose = FALSE)
+```
+
+Splitting the donors at the median age loses evidence. The composition test finds 6 cell types with age as a number
+and 3 with the two age groups; the CD4 CTL, naive CD4 and CD8 effector memory T cells are significant only with the
+number (adjusted p 0.0073 against 0.06-0.12). The expression shifts find 12 cell types against 10: the intermediate B
+cells, CD16 monocytes and CD4 CTL are significant only with the number, the naive CD8 T cells only with the groups
+(adjusted p 0.17 against 0.016). The split at 67 years discards the order of the donors within each half: a donor of 30 and one of
+65 count the same. The one cell type that gains (naive CD8) may change with age in a way a straight line describes
+poorly, or the difference may come from the relabeling, which with two groups can change the value of fewer donors
+(134 of 200, against 173); neither was tested here.
+
+### Residuals
+
+Two technical variables that are not in the model: the number of cells the donor had before the subsampling to
+800 (`n.cells.all`), and the number in the pool's name (`pool.number`).
+
+```{r residual-maps, fig.width=15, fig.height=4.5}
+sample.meta$n.cells.all <- readRDS(params$meta.file)[rownames(sample.meta), "n.cells.all"]
+sample.meta$pool.number <- as.integer(sub("^P", "", as.character(sample.meta$pool)))
+cao$sample.meta <- sample.meta
+cao$setModel(~ age + sex + (1 | pool), test = "age", numeric.step = 10, verbose = FALSE)
+cowplot::plot_grid(cao$plotSampleDistances(values = "residual", color.by = "n.cells.all", shape.by = "sex"),
+                   cao$plotSampleDistances(values = "residual", color.by = "pool.number", shape.by = "sex"),
+                   cao$plotSampleDistances(space = "composition", values = "residual", color.by = "n.cells.all", shape.by = "sex"), ncol = 3)
+```
+
+The residual maps show the donor distances left once age and sex are removed. The pool number structures the
+expression residuals (4 %, p 0.002): donors of low-numbered pools lie on one side of the map, those of high-numbered
+pools on the other. The pool number is also associated with age (Spearman correlation -0.30, older donors in
+lower-numbered pools; this was computed separately from the notebook), so a difference between pools could be taken
+for an age effect. The grouping term `(1 | pool)` guards the tests against this: age is relabeled only among donors of
+the same pool, so differences between pools do not enter the relabeled comparisons; the exceptions are the 11 pools of a
+single donor, which are exchanged as wholes among themselves. It does not remove the pool differences
+from the estimates. The number of cells a donor had before subsampling explains 1 % of the expression residuals
+(p 0.002) and a negligible share of the composition residuals (adjusted R² 0.00, p 0.042); it is not associated with age
+(Spearman correlation 0.03).
+
+## Differential expression per cell type
+
+```{r de}
+cao$estimateDEPerCellType(test = "limma-voom")
+```
+
+```{r plot-n-de, fig.width=8, fig.height=3}
+cao$plotNumberOfDEGenes()
+```
+
+Differential expression per cell type uses limma-voom, which fits the grouping term `(1 | pool)` as a random intercept:
+one correlation between the donors of a pool, shared by all genes of a cell type (0.00 to 0.20, largest in the CD4
+central-memory and naive CD4 T cells). It finds genes in 11 of the 19 tested populations, most in the naive CD4 T cells
+(246), the NK cells (105), the CD4 central-memory (46), naive CD8 (45) and CD8 effector-memory T cells (33). Eight of
+the 11 also shift significantly in expression (gsd); the exceptions are the naive CD8 T cells (adjusted p 0.17), the
+naive B cells (0.071, 3 genes) and the cDC2 (0.81, 2 genes). Conversely, four populations shift significantly without
+any differentially expressed gene: the CD16 monocytes, regulatory T cells, memory B cells and cytotoxic CD4 T cells.
+
+```{r de-pool-fixed}
+# the pool as a fixed factor (69 parameters) instead of a random intercept, on the same donors
+cao$setModel(~ age + sex + pool, test = "age", numeric.step = 10, verbose = FALSE)
+de.fixed <- cao$estimateDEPerCellType(test = "limma-voom", name = "de.pool.fixed", verbose = FALSE)
+cao$setModel(~ age + sex + (1 | pool), test = "age", numeric.step = 10, verbose = FALSE)
+nde <- function(d) vapply(d, function(x) sum(x$res$padj < 0.05, na.rm = TRUE), integer(1))
+ct <- names(cao$test.results$de)
+data.frame(random.intercept = nde(cao$test.results$de)[ct], pool.as.factor = nde(de.fixed)[ct],
+           within.pool.correlation = round(attr(cao$test.results$de, "block.correlation")[ct], 2))
+```
+
+The same analysis with the pool as a fixed factor, 69 parameters for 200 donors, finds 35 genes in all cell types
+together against 505: 22 against 246 in the naive CD4 T cells, 3 against 105 in the NK cells, 2 against 45 in the naive
+CD8 T cells; only the MAIT cells have more genes with the fixed factor (4 against none). The within-pool correlations are
+small: the pools differ little, and a likely reason for the loss (not tested separately) is that a parameter for each
+pool costs more degrees of freedom than it removes variation. The gsd test of the expression shifts fits no pool parameters either; it only restricts the relabeling to
+within pools.
+
+```{r volcano, fig.width=8, fig.height=6}
+cao$plotVolcano(cell.types = "CD4 Naive")
+```
+
+The volcano plot shows the limma-voom result of the naive CD4 T cells. Its fold changes are per decade of age, as
+everywhere in this notebook, and small: 0.02 to 0.26 log2 units for the 246 significant genes, 155 of them higher with
+age. The labeled genes are the 15 most significant ones; eight of them (LEF1-AS1, TSHZ2, TNFSF8, AIF1, LRRN3, ANKRD12,
+NOG and USP10) are also among the ten genes that lead the gsd test of this cell type, and all ten of those genes are
+significant here with the same direction.
+
+
+## Cluster-free analyses
+
+### Cluster-free density shifts
+
+```{r density, fig.width=15, fig.height=4.8, message=TRUE}
+cao$estimateCellDensity(method = "graph")
+cao$estimateDiffCellDensity()
+cowplot::plot_grid(cao$plotEmbedding(color.by = "cell.groups", title = "cell type"),
+                   cao$plotDiffCellDensity(what = "effect", title = "density change per decade (log2)", outline = TRUE),
+                   cao$plotDiffCellDensity(title = "adjusted z", outline = TRUE), ncol = 3)
+```
+
+The density map calls 7,669 of the 158,866 cells at FDR 10 % (diffusion neighborhoods of 5 % of the cells): 90 % of the
+naive CD8 T cells and a quarter of the CD8 central-memory cells, which lose density with age (outlined). The other changes of the composition are spread over
+whole populations and are smaller per cell than this one.
+
+### Cluster-free expression shifts
+
+```{r cluster-free-shifts, fig.width=13, fig.height=6, message=TRUE, warning=FALSE}
+cao$estimateClusterFreeExpressionShifts(n.permutations = 499)
+cao$plotClusterFreeExpressionShifts(adjusted = TRUE, font.size = c(2, 3), outline = TRUE)
+```
+
+The expression-shift map tests the age effect on the expression of each cell's neighborhood, with the same model and
+relabeling. At the chosen scale (diffusion neighborhoods of 3 % of the cells) 146,217 of the 158,866 cells keep an
+adjusted z of at least 1.28: nearly all T and NK cells, and parts of the B cells, CD16 monocytes and cDC2. This
+largely agrees with the cell-type test, where mainly T and NK populations shift, but the map also calls the MAIT cells,
+naive CD8 T cells, CD56-bright NK cells and platelets, which the cell-type test does not find. The calls of this map are
+protected at the level of the data set: the test of the chosen scale compares the number of called cells with that of
+every relabeled data set and is designed so that about one data set in ten without any effect produces calls. When one
+does, the calls are not scattered but cover whole regions, because overlapping neighborhoods share the same chance
+association. With age shuffled among the donors, the map called nothing in one of three shuffles and 21 % and 29 % of
+the cells in the other two, more often than that design rate (three shuffles are too few to estimate the rate); at the level of whole cell types, 40 shuffles gave
+p-values below 0.05 in 5 % of the tests, as expected (both run outside this notebook). A map that calls most of the
+cells is therefore to be read together with the cell-type test and with the size of the shift, not as evidence on its
+own.
+
+```{r cluster-free-summary, fig.width=11, fig.height=4.5}
+cao$estimateClusterFreeSummary("cell.density")
+cao$estimateClusterFreeSummary("cluster.free.expr.shifts")
+cowplot::plot_grid(cao$plotClusterFreeSummary("cell.density"), cao$plotClusterFreeSummary("cluster.free.expr.shifts"), ncol = 2)
+```
+
+The summaries count the called cells per population and test each population as a whole against the relabelings. The
+density changes (left) are significant for the naive CD4 and CD8 T cells, CD4 and CD8 central-memory and regulatory T
+cells (lower density with age) and for the NK, gamma-delta T, CD8 effector-memory, cytotoxic CD4 T cells and CD16
+monocytes (higher). The expression shifts (right) are significant for all T and NK populations, the intermediate and
+memory B cells, the cDC2, the CD16 monocytes and the platelets, and not for the naive B cells, classical monocytes, pDC, plasmablasts
+and progenitors.
+
+## Summary
+
+- Age is tested as a continuous variable, per decade, adjusted for sex and relabeled within processing pools; the
+  pools are associated with age (their donors are of similar age), which the grouping term handles.
+- The composition shows the known changes of the aging immune system: fewer naive CD8 and CD4 T cells, more cytotoxic
+  and effector-memory T cells, NK cells and CD16 monocytes. 12 of 22 populations shift in expression, the T and NK
+  populations most, with LRRN3 and NOG among the genes that decrease with age in the naive CD4 T cells.
+- The density map calls cells mainly among the naive CD8 T cells (90 % of them); tested as whole populations, ten
+  populations change in density. The expression-shift map calls nearly all T and NK cells; its test is designed to
+  produce calls in about one data set in ten without any effect, it called whole regions in two of three shuffles of
+  age here, and its calls are therefore read together with the cell-type test.
+
+## Session info
+
+```{r session}
+sessionInfo()
+```

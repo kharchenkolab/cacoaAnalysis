@@ -1,0 +1,564 @@
+---
+title: "Cacoa on the pulmonary fibrosis cohort of Natri et al. 2024: site, sex and age"
+author: "Cacoa developers"
+date: "`r Sys.Date()`"
+output:
+  github_document:
+    toc: yes
+params:
+  data.file: ""      # natri_harmony_seurat.rds built by prepare_natri_harmony.R; empty = do not evaluate
+  meta.file: ""      # natri_harmony_seurat_sample_meta.rds written next to it
+  n.cores: 16
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(eval = nzchar(params$data.file), message = FALSE, warning = FALSE, fig.path = "natri_cacoa_files/figure-gfm/", dpi = 90, comment = "")
+gsea.available <- nzchar(params$data.file) &&
+  all(vapply(c("clusterProfiler", "DOSE", "enrichplot", "fgsea", "org.Hs.eg.db"), requireNamespace, logical(1), quietly = TRUE))
+```
+
+Natri et al. (2024, Nature Genetics) profiled lungs from patients with pulmonary fibrosis (PF) and from control
+donors by scRNA-seq (10x) at two centers, the Translational Genomics Research Institute (`TGen`) and Vanderbilt
+University (`Vanderbilt`), the centers of the Habermann et al. (2020) data used in the PF example. The data are taken
+from GEO (GSE227136) with the authors' annotation (26 populations), one library per donor and at most 2,000 cells per
+donor: 187,756 cells of 111 lungs (65 PF, 46 control), on a kNN graph of a Harmony embedding
+(`prepare_natri_harmony.R`, next to this notebook). The PF lungs are idiopathic pulmonary fibrosis (`IPF`, 38) or
+other interstitial lung diseases (`Other_ILD`, 27). The study records sex, age, smoking and ancestry, with missing
+values in each.
+
+The contrast of interest is **PF versus control**, with the center as a grouping term and sex as a covariate. The
+notebook then asks what adding age does, since the controls are much younger than the patients, and compares IPF with
+the other interstitial lung diseases. In short: the alveolar epithelium (AT1, AT2) and the capillaries are lost and
+the airway-type epithelium (basal, KRT5-KRT17+ and secretory cells) expands, almost every population shifts in
+expression, and the center changes nothing of this. Adding age reduces the significant composition changes from 12 to
+4; a comparison restricted to the lungs whose ages overlap gives the same adjusted result, so the adjustment does not
+rest on the youngest controls. IPF and the other interstitial lung diseases do not
+differ significantly in composition or in expression.
+
+```{r libs}
+library(cacoa)
+library(ggplot2)
+```
+
+## Load data
+
+```{r load}
+seu <- readRDS(params$data.file)
+samples <- sort(unique(seu$sample))
+sample.meta <- readRDS(params$meta.file)[samples, c("condition", "subtype", "cohort", "sex", "age", "smoking", "ethnicity", "n.cells")]
+summary(sample.meta)
+table(seu$celltype)
+```
+
+Sex is missing for 8 lungs and age for 14; a model that contains them uses the lungs with complete values (listwise
+deletion, reported by the model).
+
+```{r construct, message=TRUE}
+cao <- Cacoa$new(seu, sample.metadata = sample.meta, sample.per.cell = factor(seu$sample), cell.groups = factor(seu$celltype),
+                 embedding = seu@reductions$umap@cell.embeddings, graph.name = "RNA_nn", data.layer = "data", n.cores = params$n.cores)
+cao$setOptions(n.permutations = 499, seed = 1)
+cao$plot.params <- list(size = 0.1, alpha = 0.1, font.size = c(2, 3))
+cao$sample.groups.palette <- c(Control = "#4575b4", PF = "#d73027")
+```
+
+```{r embedding, fig.width=11, fig.height=5}
+cowplot::plot_grid(cao$plotEmbedding(color.by = "cell.groups", title = "cell type"),
+                   cao$plotEmbedding(color.by = "condition", title = "condition", mark.groups = FALSE, show.legend = TRUE), ncol = 2)
+```
+
+The embedding separates the epithelial (left), immune (right), endothelial and stromal (bottom) compartments. The
+condition is mixed within most populations; the airway-type epithelium (basal, `KRT5-KRT17+`) comes mostly from PF
+lungs.
+
+## Check the design
+
+```{r check-design}
+cao$checkDesign(test = "condition")
+```
+
+The design check finds what the study design implies: `subtype` determines the condition (it refines it), so it cannot
+be a covariate of this contrast, and age is strongly associated with it (0.63 on the check's association scale). It
+also reports that 16 of the 37 controls with a recorded age are younger than the youngest PF lung (43): adjusting for
+age compares them with the patients through a fitted age trend beyond the ages observed in PF. The centers have
+nearly the same share of PF lungs (26 of 46 at TGen, 39 of 65 at Vanderbilt; association 0.00), so the center cannot
+confound the contrast; it can still add variation.
+
+```{r plot-design-balance, fig.width=10, fig.height=6}
+cao$plotDesign("balance")
+```
+
+```{r plot-design-assoc, fig.width=7, fig.height=6}
+cao$plotDesign("associations")
+```
+
+The association matrix shows every pair of metadata columns (Cramér's V for two factors, the correlation ratio for a
+factor and a number). Age is associated with the condition (0.63) and with the subtype (0.64); the center is not
+associated with the condition, and of the other columns most strongly with smoking (0.44).
+
+
+## Screen covariates
+
+```{r screen}
+cao$screenCovariates(n.permutations = 199)
+```
+
+```{r plot-screen, fig.width=10, fig.height=6}
+cao$plotCovariateScreen()
+```
+
+```{r plot-screen-summary, fig.width=8, fig.height=4}
+cao$plotCovariateSummary()
+```
+
+The screen finds no covariate associated with expression in three or more cell types after the others (partial mode);
+the center explains the most (adjusted R2 0.05 across cell types, 0.03 for the composition). Within single cell types,
+the condition, subtype, center, age, smoking and the number of cells are associated with expression only marginally
+(each alone), not after adjustment for the other covariates; the condition and subtype, age and the condition, and the
+center and smoking are associated with each other.
+
+```{r variance-partition, fig.width=10, fig.height=5}
+cao$plotVariancePartition(c("condition", "cohort", "sex", "age"))
+```
+
+The variance partition splits the between-lung variation of each cell type's expression into the parts explained by
+each variable alone, a shared part and a residual. In most cell types the center explains more than the condition (in
+basal and ciliated cells about 10 % against 1 %), and the condition explains most in the AT2 cells, macrophages and
+venous endothelial cells (about 5-7 %). Sex and age explain little on their own.
+
+### Sample maps
+
+```{r sample-maps, fig.width=15, fig.height=5}
+cowplot::plot_grid(
+  cao$plotSampleDistances(cell.type = "AT2", color.by = "cohort", shape.by = "condition"),
+  cao$plotSampleDistances(color.by = "age", shape.by = "condition"),
+  cao$plotSampleDistances(space = "composition", color.by = "cohort", shape.by = "condition"), ncol = 3)
+```
+
+The sample maps place the lungs by the distances between their profiles: of the AT2 cells (left, color: center), of
+all cell types together (middle, color: age) and of the composition (right, color: center); shape is the condition. In
+the AT2 cells the lungs separate by both condition and center (9 % of the distances each); in the joint expression the
+PF lungs and the older lungs occupy the same part of the map, which is the association of age and disease seen from
+the data side. The composition separates by condition (9 %) more than by center (6 %).
+
+
+## Set the model
+
+```{r set-model}
+cao$setModel(~ condition + sex + (1 | cohort), test = "condition")
+```
+
+The center is a grouping term: the condition is exchanged within centers. Sex is a covariate, which drops the 8 lungs
+without it.
+
+## Composition
+
+```{r loadings, fig.width=13, fig.height=6.5}
+cao$estimateCellLoadings()
+cao$plotCellLoadings(center = "both")
+```
+
+The composition test finds the changes known from the PF literature: AT1 and AT2 cells are depleted (about -3 log2
+units relative to the geometric mean), the basal, `KRT5-KRT17+` and secretory cells are enriched, and the capillary,
+arteriole and lymphatic endothelial cells are depleted (adjusted p 0.007-0.012). Smaller enrichments of the activated
+myofibroblasts, mesothelial, ciliated and dendritic cells (0.012-0.044) and a depletion of the monocytes (0.026) follow.
+
+```{r loadings-table}
+knitr::kable(codaLoadingsTable(cao$test.results$coda, min.effect = 1.5), digits = 3)
+```
+
+```{r coda-samples, fig.width=13, fig.height=8.5}
+cao$plotCodaSamples(n.top = 8)
+```
+
+The per-lung proportions show what the loadings summarize: AT1 and AT2 cells fall about six-fold, basal cells rise
+twelve-fold and `KRT5-KRT17+` cells four-fold, each as a shift of a broad distribution. Some control lungs have no
+basal or `KRT5-KRT17+` cells at all (open circles at the bottom), which the model handles with a pseudocount.
+
+```{r contrast-tree, fig.width=11, fig.height=7}
+cao$plotContrastTree()
+```
+
+```{r coda-predicted, fig.width=10, fig.height=5}
+cao$plotCodaCellTypes(value = "predicted")
+```
+
+The contrast tree summarizes the composition change by successive splits of the cell types. The first split (2.13
+log2 units, 59 % of the change) separates the AT1 and AT2 cells and the populations that decline with them
+(capillary, lymphatic, arteriole, monocytes, myeloid and lymphoid cells, and the `MyoFB` and `Inflamed` populations)
+from the rest. Within the first group a split (2.06, 14 %) separates AT1 and AT2 from the others; within the rest a
+split (1.68, 15 %) isolates the expansion of the secretory, basal and `KRT5-KRT17+` cells. The predicted proportions
+translate the loadings into fractions of the lung's cells: AT2 cells
+from about 21 % to 4 %, secretory cells from 4 % to 16 %, monocytes from 47 % to 35 %.
+
+```{r coda-diagnostics, fig.width=12, fig.height=7}
+cao$plotFitDiagnostics("composition")
+```
+
+The fit diagnostics show a few lungs with residuals beyond three in single cell types, and no lung that changes a
+loading by a standard error: the composition result does not rest on single lungs.
+
+```{r sensitivity-composition, fig.width=11, fig.height=8}
+cao$checkSensitivity(analysis = "composition", n.permutations = 199)
+cao$plotSensitivity(analysis = "composition")
+```
+
+The composition is refitted without sex (on all 111 lungs, including the 8 without a recorded sex) and without the
+grouping term. Eleven cell types are significant in all three models with stable loadings; the monocytes lose
+significance when the center is ignored, and the ciliated cells are significant only in the current model. Neither the
+center nor sex is behind the composition result.
+
+
+## Expression shifts per cell type
+
+```{r shifts, message=TRUE}
+res <- cao$estimateExpressionShiftMagnitudes()
+res
+```
+
+```{r plot-shifts, fig.width=9, fig.height=5.2}
+cao$plotExpressionShiftMagnitudes(show.ci = TRUE, show.genes = TRUE)
+```
+
+22 of 25 populations shift in expression (gsd, adjusted p < 0.05). The largest normalized shifts are those of the
+venous endothelial cells (0.31), macrophages (0.25) and AT2 cells (0.22); the bars on the right count the genes with a
+change at FDR 10 % (more than 1,900 in each of the venous cells, macrophages, AT2, monocytes, secretory and dendritic
+cells). The pericyte, basal and `PLIN2+ FB` estimates have wide jackknife intervals and wide noise bands: only two or
+three control lungs have enough of these cells.
+
+```{r plot-shifts-var, fig.width=9, fig.height=5.2}
+cao$plotExpressionShiftMagnitudes(effect = "var")
+```
+
+The dispersion effect tests whether PF lungs differ more from each other than control lungs. They do in the venous
+endothelial cells, macrophages, secretory and AT2 cells (adjusted p 0.011) and in the myeloid cells, arterioles and T
+cells (0.044); the PF lungs are more heterogeneous in the populations that change most.
+
+### Behind one cell type
+
+```{r shift-detail, fig.width=12, fig.height=8}
+cao$plotShiftDetail("AT2")
+```
+
+The detail of the AT2 cells shows the lungs on the adjusted distances (left), where PF and control lungs separate,
+the distances between pairs of lungs (middle), where pairs of a PF and a control lung are the most different, and the
+dispersion of each lung (right), higher and more uniform among the PF lungs. The shift (0.22) dominates the total
+difference (0.28); the dispersion effect is smaller (0.13).
+
+```{r sample-influence, fig.width=11, fig.height=8}
+cao$plotSampleInfluence()
+```
+
+```{r shift-diagnostics, fig.width=12, fig.height=7}
+cao$plotFitDiagnostics("expression.shifts")
+```
+
+```{r residual-maps, fig.width=15, fig.height=4.5}
+cowplot::plot_grid(cao$plotSampleDistances(values = "residual", color.by = "smoking", shape.by = "condition"),
+                   cao$plotSampleDistances(values = "residual", color.by = "age", shape.by = "condition"),
+                   cao$plotSampleDistances(values = "residual", color.by = "cohort", shape.by = "condition"), ncol = 3)
+```
+
+The residual maps show the sample distances left once the model's fixed part (condition and sex) is removed. The
+center still structures them (8 %, p 0.002): it is a grouping term, which is not fitted but restricts the relabeling
+to lungs of the same center, so its differences stay in the residuals and do not enter the comparison. The smoking
+status explains 2 % (p 0.002); the lungs without a recorded status (gray) and the former smokers lie mostly on the side
+of the TGen lungs (16 of the 17 lungs without a status and 14 of the 21 former smokers in the model are from TGen), so
+this association may in part be that of the center. The age explains nothing of the residuals (p 0.98): within the
+conditions, age is not associated with the remaining differences; the association with age seen on the map of the
+joint expression above goes together with the condition and is removed with it. Whether the
+condition effect is partly an age effect cannot be read from this map; the comparison of models with and without age
+below addresses it.
+
+
+The fit diagnostics of the expression shifts show no lung far from its fitted position; single lungs change the shift
+of a few populations by more than a standard error (basal, myeloid and `PLIN2+ FB` cells, measured in 48, 28 and 16
+lungs, with only two control lungs for the basal and `PLIN2+ FB` cells).
+
+
+```{r sensitivity}
+cao$checkSensitivity(n.permutations = 199)
+```
+
+```{r plot-sensitivity, fig.width=10, fig.height=7}
+cao$plotSensitivity()
+```
+
+The sensitivity analysis refits the shifts without sex and without the grouping term (`minus (1 | cohort)`). Every
+population keeps its result in all three models: the center changes nothing here. Three populations (myeloid,
+lymphoid, mesothelial cells) have a magnitude carried mostly by one lung (named in the printout).
+
+## Adding age
+
+The controls are younger than the patients, and 16 of them are younger than any patient. Four models are compared,
+all on lungs with complete sex and age: without and with age on all 97 such lungs, and without and with age on the 81
+lungs aged 43 or more, where patients and controls cover the same ages.
+
+```{r age-by-condition}
+tapply(sample.meta$age, sample.meta$condition, summary)
+```
+
+```{r age-proportions, fig.width=12, fig.height=7}
+cnt <- table(cao$sample.per.cell, cao$cell.groups)
+prop <- sweep(cnt + 0.5, 1, rowSums(cnt) + 0.5 * ncol(cnt), "/")
+types <- c("T cells", "Dendritic cells", "Proliferating", "Monocyte", "AT2", "Secretory")
+d <- do.call(rbind, lapply(types, function(t) data.frame(sample = rownames(prop), celltype = t, proportion = as.numeric(prop[, t]))))
+d$age <- sample.meta[d$sample, "age"]; d$condition <- sample.meta[d$sample, "condition"]
+ggplot(d[!is.na(d$age), ], aes(age, proportion, color = condition)) + geom_point(size = 1.3) +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE) + geom_vline(xintercept = 43, linetype = 2, color = "grey40") +
+  scale_y_log10() + facet_wrap(~ celltype, scales = "free_y", ncol = 3) + scale_color_manual(values = cao$sample.groups.palette) +
+  labs(y = "proportion of the lung's cells (log scale)", x = "age (dashed: youngest PF lung)") + cao$plot.theme
+```
+
+The proportions of six cell types against age, by condition, show where the young controls matter. The T-cell
+fraction is high (19-54 %) in four of the 13 controls younger than 40 but 10 % or more in only two of the 24 older
+controls (10 % and 26 %), and it declines steeply with age among the PF lungs; a comparison of PF with all controls
+therefore depends on how many young controls there are. The fitted lines of the dendritic cells and proliferating cells
+rise with age in both groups (among the controls alone these trends are not significant, see below). The secretory
+cells show little trend with age within either group, although adding age to the model lowers their loading (below);
+the AT2 cells are flat among the controls and decline with age among the PF lungs.
+
+
+```{r model-age}
+complete <- rownames(sample.meta)[!is.na(sample.meta$age) & !is.na(sample.meta$sex)]
+cao$excludeSamples(setdiff(rownames(sample.meta), complete))
+cao$setModel(~ condition + sex + (1 | cohort), test = "condition")
+cao$estimateCellLoadings(name = "coda.complete")
+cao$estimateExpressionShiftMagnitudes(name = "shifts.complete")
+cao$setModel(~ condition + sex + age + (1 | cohort), test = "condition")
+cao$estimateCellLoadings(name = "coda.age")
+cao$estimateExpressionShiftMagnitudes(name = "shifts.age")
+```
+
+```{r compare-age}
+sh <- function(nm) { r <- cao$test.results[[nm]]$results; r[r$effect == "shift", c("celltype", "estimate.norm", "padj")] }
+m <- merge(sh("shifts.complete"), sh("shifts.age"), by = "celltype", suffixes = c(".without.age", ".with.age"))
+m[, -1] <- signif(m[, -1], 2); m[order(m$padj.without.age), ]
+lo <- function(nm) { x <- cao$test.results[[nm]]$contrast; data.frame(loading = x$loadings$obs / log(2), padj = x$per_cell$padj[names(x$loadings$obs)]) }
+l1 <- lo("coda.complete"); l2 <- lo("coda.age")[rownames(l1), ]
+d <- data.frame(loading.without.age = l1$loading, padj.without.age = l1$padj, loading.with.age = l2$loading, padj.with.age = l2$padj, row.names = rownames(l1))
+signif(d[order(d$padj.without.age), ], 2)
+```
+
+```{r common-range}
+young <- rownames(sample.meta)[!is.na(sample.meta$age) & sample.meta$age < min(sample.meta$age[sample.meta$condition == "PF"], na.rm = TRUE)]
+cao$excludeSamples(c(setdiff(rownames(sample.meta), complete), young))
+table(cao$sample.meta$condition); tapply(cao$sample.meta$age, cao$sample.meta$condition, summary)
+cao$setModel(~ condition + sex + (1 | cohort), test = "condition")
+cao$estimateCellLoadings(name = "coda.common")
+cao$estimateExpressionShiftMagnitudes(name = "shifts.common")
+cao$setModel(~ condition + sex + age + (1 | cohort), test = "condition")
+cao$estimateCellLoadings(name = "coda.common.age")
+cao$estimateExpressionShiftMagnitudes(name = "shifts.common.age")
+```
+
+```{r compare-common}
+nms <- c(all = "coda.complete", all.age = "coda.age", common = "coda.common", common.age = "coda.common.age")
+L <- sapply(nms, function(nm) lo(nm)[rownames(l1), "loading"]); P <- sapply(nms, function(nm) lo(nm)[rownames(l1), "padj"])
+rownames(L) <- rownames(P) <- rownames(l1)
+signif(L[order(P[, "all"]), ], 2)       # composition loadings (log2) in the four models
+signif(P[order(P[, "all"]), ], 2)       # their adjusted p
+colSums(P < 0.05)                       # cell types with adjusted p < 0.05
+snm <- c(all = "shifts.complete", all.age = "shifts.age", common = "shifts.common", common.age = "shifts.common.age")
+S <- Reduce(function(a, b) merge(a, b, by = "celltype", all = TRUE), lapply(names(snm), function(k) { x <- sh(snm[[k]]); names(x)[-1] <- paste(names(x)[-1], k, sep = "."); x }))
+S[, -1] <- signif(S[, -1], 2); S[order(S$padj.all), c("celltype", grep("^padj", names(S), value = TRUE), grep("^estimate", names(S), value = TRUE))]
+colSums(S[, grep("^padj", names(S))] < 0.05, na.rm = TRUE)
+cao$excludeSamples(NULL)
+cao$setModel(~ condition + sex + (1 | cohort), test = "condition")
+```
+
+The four models answer two questions. First, what adding age does on all lungs: the composition result shrinks from
+12 to 4 significant cell types and the expression shifts from 20 to 16 populations. Age explains 39 % of the variance
+of the PF/control indicator, so the standard error of the condition effect grows by a factor of 1.3 with age in the
+model; the strongest changes keep their size (AT1 -3.2 against -3.1 log2 units), but several other loadings move
+(dendritic cells 1.1 to 0.57, monocytes -0.63 to -1.1, T cells -0.13 to +0.78, proliferating cells -0.05 to -0.64).
+
+Second, whether the adjusted result depends on the young controls, whose comparison with the patients rests on the
+fitted age trend alone. It does not: on the 81 lungs in the common age range the adjusted loadings are close to those
+on all lungs (dendritic cells 0.64, monocytes -0.84, T cells 0.71, proliferating cells -0.60), and the same four cell
+types are significant (AT1, AT2, basal and `KRT5-KRT17+` cells). The unadjusted model on the common range lies in
+between (7 significant types). Two kinds of change can be told apart:
+
+- results that change when the young controls are left out, with or without age in the model, and agree on the
+  common range with the age-adjusted result on all lungs: the T-cell loading (-0.13 on all lungs without age, about
+  +0.7 in the three other models), the lymphoid loading (-0.98 against -0.3 to -0.5; not significant in any model)
+  and the expression shifts of the lymphatic endothelial cells and T cells (significant only on all lungs without
+  age): these came from the young controls;
+- loadings that are similar on both ranges without age and move when age is added, on both ranges alike (dendritic
+  cells 1.1 and 0.89 without age, 0.57 and 0.64 with age; monocytes -0.63 and -0.59, then -1.1 and -0.84;
+  proliferating cells -0.05 and -0.17, then -0.64 and -0.60): within the common range the patients are still older
+  (median 64 against 55), and the age trend estimated there produces these moves.
+
+The age adjustment is therefore supported by the lungs whose ages overlap, and the age-adjusted result is the one to
+report. The four composition changes and the expression shifts that survive it (16 populations on all lungs, 15 on the common
+range) are separated from age in this cohort; for the other composition changes (secretory, capillary, arteriole,
+lymphatic, mesothelial and activated myofibroblast cells, adjusted p 0.08-0.10 with age; dendritic and ciliated cells,
+0.51 and 0.29) the cohort cannot tell disease from age: their adjusted estimates are smaller for some (secretory cells
+1.1 against 1.5 log2 units, dendritic cells 0.57 against 1.1), similar or larger for others (arteriole -1.2 against
+-0.92), and all are less precise.
+
+### Age among the controls
+
+```{r controls-age}
+cao$excludeSamples(rownames(sample.meta)[sample.meta$condition != "Control" | is.na(sample.meta$age) | is.na(sample.meta$sex)])
+cao$setModel(~ age + sex + (1 | cohort), test = "age", numeric.step = 10)
+cao$estimateCellLoadings(name = "coda.controls.age")
+cao$estimateExpressionShiftMagnitudes(name = "shifts.controls.age")
+gap <- diff(tapply(sample.meta[complete, "age"], sample.meta[complete, "condition"], mean)) / 10   # mean age difference between PF and control, in decades
+lc <- lo("coda.controls.age")[rownames(l1), ]
+signif(data.frame(control.per.decade = lc$loading, padj.controls = lc$padj, expected.from.age.gap = lc$loading * gap,
+                  PF.without.age = L[, "all"], PF.with.age = L[, "all.age"], row.names = rownames(l1))[order(lc$padj), ], 2)
+sc <- sh("shifts.controls.age"); sc[order(sc$padj), ]
+cao$excludeSamples(NULL)
+cao$setModel(~ condition + sex + (1 | cohort), test = "condition")
+```
+
+```{r controls-age-samples, fig.width=13, fig.height=4.5}
+cao$plotCodaSamples(name = "coda.controls.age", n.top = 4)
+```
+
+Among the 37 controls alone, no cell type changes significantly with age, in composition or in expression (adjusted
+p 0.53 or more): 37 lungs cannot establish the age trends. The trends point, however, in the direction that explains
+how the adjustment moves the PF loadings. The T cells decline by 0.37 log2 units per decade among the controls, which
+over the 17-year age difference between the groups predicts a difference of -0.62 from age alone; adjusting for age
+moves the PF loading of the T cells from -0.13 to +0.78. The dendritic and proliferating cells rise with age among the
+controls, and adjusting for age lowers their PF loadings. The monocytes rise only slightly among the controls (0.07
+per decade, 0.12 over the age difference), much less than the adjustment moves their PF loading (-0.63 to -1.1). For
+the T cells, dendritic and proliferating cells the age adjustment is therefore consistent with the age trends seen in
+lungs without disease, as far as these few lungs can show.
+
+## Differential expression per cell type
+
+```{r de}
+cao$estimateDEPerCellType(test = "limma-voom")
+```
+
+```{r plot-n-de, fig.width=8, fig.height=3}
+cao$plotNumberOfDEGenes()
+```
+
+Differential expression per cell type uses limma-voom, which fits the grouping term `(1 | cohort)` as a random intercept:
+one correlation between the lungs of a center, shared by all genes of a cell type (-0.01 to 0.15). With two centers
+this correlation rests on two groups and is estimated imprecisely; it is small in every cell type, so the fit should be
+close to one without the center (not compared here). The most genes are found in the AT2 cells (3,341), macrophages (2,665), venous endothelial
+cells (2,611) and monocytes (2,503); the first three also have the largest shifts.
+
+```{r volcano, fig.width=8, fig.height=6}
+cao$plotVolcano(cell.types = "AT2")
+```
+
+The volcano plot of the AT2 cells shows the differential expression behind their shift: GAS6, CD24, CRIP2, PDLIM4,
+FN1 and TIMP1 are among the most significant increases, DCXR and FABP5 among the decreases (BLVRB, the second most
+significant decrease, is not labeled). MMP7 (log2 fold change 3.1, not labeled) and SOX4 (1.6) are also significant;
+both have been reported as markers of the transitional and aberrant epithelial states of fibrotic lungs.
+
+## Functional interpretation
+
+```{r gsea, eval=gsea.available}
+cao$estimateOntology(type = "GSEA", org.db = org.Hs.eg.db::org.Hs.eg.db, seed = TRUE, n.cores = 1)
+```
+
+```{r plot-gsea-up, eval=gsea.available, fig.width=10, fig.height=9}
+cao$plotOntologyHeatmapCollapsed(name = "GSEA", genes = "up", n = 25, clust.method = "ward.D")
+```
+
+```{r plot-gsea-down, eval=gsea.available, fig.width=10, fig.height=9}
+cao$plotOntologyHeatmapCollapsed(name = "GSEA", genes = "down", n = 25, clust.method = "ward.D")
+```
+
+Gene set enrichment ranks GO terms per cell type. The terms up in PF are dominated by cell adhesion, migration and
+morphogenesis: the cluster of adhesion terms is enriched in nearly every population, most strongly in the
+proliferating, AT2, fibroblast and activated myofibroblast cells. Immune activation terms are up most in the
+proliferating, AT2, AT1 and B cells; the venous endothelial and mesothelial cells stand out with ribosome biogenesis.
+The terms down in PF are dominated by translation, mitochondrial gene expression and respiration, most strongly in the
+AT2, secretory, fibroblast and activated myofibroblast cells.
+
+
+## Cluster-free analyses
+
+### Cluster-free density shifts
+
+```{r density, fig.width=15, fig.height=4.8, message=TRUE}
+cao$estimateCellDensity(method = "graph")
+cao$estimateDiffCellDensity()
+cowplot::plot_grid(cao$plotEmbedding(color.by = "cell.groups", title = "cell type"),
+                   cao$plotDiffCellDensity(what = "effect", title = "density change (log2 FC)", outline = TRUE),
+                   cao$plotDiffCellDensity(title = "adjusted z", outline = TRUE), ncol = 3)
+```
+
+The density map calls 120,278 of the 187,756 cells (64 %) at FDR 10 %, at the finest scale (diffusion neighborhoods of
+1 % of the cells): the AT2 cells lose density and the secretory, basal and ciliated cells gain it, and within the immune
+compartment a region of the macrophages loses density while a region near the dendritic cells gains it: changes
+within populations that the composition, which counts whole populations, cannot show.
+
+### Cluster-free expression shifts
+
+```{r cluster-free-shifts, fig.width=13, fig.height=6, message=TRUE, warning=FALSE}
+cao$estimateClusterFreeExpressionShifts(n.permutations = 499)
+cao$plotClusterFreeExpressionShifts(adjusted = TRUE, font.size = c(2, 3), outline = TRUE)
+```
+
+```{r cluster-free-summary, fig.width=11, fig.height=4.5}
+cao$estimateClusterFreeSummary("cell.density")
+cao$estimateClusterFreeSummary("cluster.free.expr.shifts")
+cowplot::plot_grid(cao$plotClusterFreeSummary("cell.density"), cao$plotClusterFreeSummary("cluster.free.expr.shifts"), ncol = 2)
+```
+
+The expression-shift map calls 173,033 of the 187,756 cells (finest scale, neighborhoods of 1 % of the cells), and
+the population summaries (right) are significant for all populations: the disease changes expression throughout the
+lung, which the cell-type test also found (22 of 25 populations). The density summaries (left) agree with most of the
+composition: the secretory, PNEC, basal, `KRT5-KRT17+`, ciliated, dendritic, mesothelial and activated myofibroblast
+cells gain density, the AT1 and AT2 cells lose it. They differ in two respects: the PNEC cells, unchanged in the
+composition, gain density, and the depletion of the capillary, arteriole, lymphatic and monocyte populations is not
+significant on the density map.
+
+
+## IPF versus other interstitial lung disease
+
+```{r subtype-all}
+cao$setModel(~ subtype + sex + (1 | cohort), test = "subtype: all")
+cao$estimateCellLoadings(name = "coda.subtype.all", verbose = FALSE)$results
+```
+
+The whole-factor test asks whether the three levels of the subtype (control, IPF, other interstitial lung disease)
+differ in composition at all, without choosing a pair. They do (adjusted R² 0.10, p 0.002); the dispersion of the
+compositions does not differ (p 0.89). This is expected, since the PF lungs differ from the controls; the test does not
+say whether the two disease groups differ from each other, which the comparison of IPF with the other diseases below
+asks.
+
+```{r subtype, fig.width=13, fig.height=6.5}
+cao$setModel(~ subtype + sex + (1 | cohort), test = "subtype: IPF vs Other_ILD")
+cao$estimateCellLoadings(name = "coda.subtype")
+cao$plotCellLoadings(name = "coda.subtype", center = "both")
+```
+
+Among the PF lungs, IPF against the other interstitial lung diseases: the controls stay in the model as a third level,
+but only the PF lungs (62) change their label. No cell type differs significantly in composition (smallest adjusted p
+0.052: PNEC and myeloid cells higher in IPF).
+
+```{r subtype-shifts, fig.width=9, fig.height=5.2}
+cao$estimateExpressionShiftMagnitudes(name = "shifts.subtype")
+cao$plotExpressionShiftMagnitudes(name = "shifts.subtype", show.ci = TRUE, show.genes = TRUE)
+```
+
+No population shifts significantly in expression either (smallest adjusted p 0.050, at the threshold: B cells,
+measured in only 15 IPF and 6 other lungs). The other interstitial lung diseases are a mixture of diagnoses; with 36
+against 26 lungs in the model, and fewer in most cell types, these data detect no difference from IPF, but they cannot
+exclude differences of moderate size.
+
+## Summary
+
+- PF against control, relabeled within centers and adjusted for sex: loss of AT1, AT2 and capillary cells, expansion
+  of the basal, `KRT5-KRT17+` and secretory cells, and expression shifts in 22 of 25 populations, the venous
+  endothelial cells, macrophages and AT2 cells most. The center has no influence on these results.
+- Age is strongly associated with the disease, and 16 controls are younger than any patient (the design check reports
+  both). Adjusting for age keeps the size of the strongest changes but reduces the significant composition changes
+  from 12 to 4 and the expression shifts from 20 to 16. The same adjusted result is obtained on the lungs in the
+  common age range, so it does not rest on the youngest controls; some unadjusted results (the T-cell loading and
+  the T-cell and lymphatic expression shifts) came from them.
+- IPF and the other interstitial lung diseases do not differ significantly.
+
+## Session info
+
+```{r session}
+sessionInfo()
+```

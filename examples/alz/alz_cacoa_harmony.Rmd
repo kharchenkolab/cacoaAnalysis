@@ -1,0 +1,134 @@
+---
+title: "Alzheimer's disease, entorhinal cortex: the cluster-free maps on a Harmony-aligned graph"
+author: "Cacoa developers"
+date: "`r Sys.Date()`"
+output:
+  github_document:
+    toc: yes
+params:
+  data.file: ""      # alz_harmony_seurat.rds built by prepare_alz_harmony.R; empty = do not evaluate
+  meta.file: "/home/viktor_petukhov/projects/cacoaAnalysis/data/AZ/cell_metadata.csv"    # per-cell metadata of the study (tab-delimited)
+  n.cores: 16
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(eval = nzchar(params$data.file), message = FALSE, warning = FALSE, dpi = 90)
+```
+
+This notebook is a companion of `alz_cacoa.Rmd`: the same cells, counts and annotation on a kNN graph of a Harmony
+embedding (`prepare_alz_harmony.R`: 2,000 variable genes, 50 PCs, Harmony by sample, 30 nearest neighbors on 30 Harmony
+dimensions, UMAP on the same) instead of the Conos alignment graph. Only the graph-dependent parts are rerun, the
+cluster-free density and expression-shift maps; the cell-type-level analyses use the counts and the annotation alone
+and are those of the main notebook. The PF companion (`../pf/pf_cacoa_harmony.Rmd`, `../pf/pf_density_diagnosis.md`)
+shows why the graph matters there: on the Conos alignment of that cohort the density kernel leaks out of the populations
+present in only part of the samples. Here the question is whether the maps of a cohort where the Conos graph worked
+change with the alignment.
+
+```{r libs}
+library(cacoa)
+library(ggplot2)
+library(dplyr)
+```
+
+## Load data
+
+```{r load}
+seu <- readRDS(params$data.file)
+cell.meta <- read.delim(params$meta.file)
+sample.meta <- cell.meta %>% filter(patient %in% unique(seu$sample)) %>% group_by(patient) %>%
+  summarise(condition = ifelse(unique(batchCond) == "AD", "AD", "Control"), sex = unique(sex), batch = unique(batch),
+            n.cells = n(), median.umi = median(nUMI), median.genes = median(nGene), median.pct.mt = median(pctMT)) %>%
+  mutate(condition = factor(condition, levels = c("Control", "AD"))) %>% as.data.frame()
+rownames(sample.meta) <- sample.meta$patient
+sample.meta$patient <- NULL
+sample.meta <- sample.meta[sort(unique(seu$sample)), ]
+table(sample.meta$condition)
+```
+
+```{r construct, message=TRUE}
+cao <- Cacoa$new(seu, sample.metadata = sample.meta, sample.per.cell = factor(seu$sample), cell.groups = factor(seu$celltype),
+                 embedding = seu@reductions$umap@cell.embeddings, graph.name = "RNA_nn", data.layer = "data", n.cores = params$n.cores)
+```
+
+```{r options}
+cao$setOptions(n.permutations = 999, seed = 1)
+cao$plot.params <- list(size = 0.3, alpha = 0.3, font.size = 3)
+cao$sample.groups.palette <- c(Control = "#4575b4", AD = "#d73027")
+```
+
+The graph used is Seurat's kNN graph on the Harmony embedding (`RNA_nn`, symmetrized). The thin black lines on the maps
+below outline the regions where the cells significant at an adjusted p of 0.05 are the majority (`outline = TRUE`).
+
+```{r embedding, fig.width=11, fig.height=5}
+cowplot::plot_grid(cao$plotEmbedding(color.by = "cell.groups", title = "cell type"),
+                   cao$plotEmbedding(color.by = "condition", title = "condition", mark.groups = FALSE, show.legend = TRUE), ncol = 2)
+```
+
+```{r set-model}
+cao$setModel(~ condition, test = "condition")
+```
+
+## Cluster-free density shifts
+
+The same map as in the main notebook: the default diffusion neighborhoods (`scale = "auto"`, a scan over 1, 3 and 5 %
+of the cells), each sample's kernel density tested on the log scale with the model, cells adjusted by the pooled
+permutation false-discovery rate.
+
+```{r density, fig.width=15, fig.height=4.8, message=TRUE}
+cao$estimateCellDensity(method = "graph")
+cao$estimateDiffCellDensity()
+cowplot::plot_grid(cao$plotEmbedding(color.by = "cell.groups", title = "cell type"),
+                   cao$plotDiffCellDensity(what = "effect", title = "density change (log2 FC)", outline = TRUE),
+                   cao$plotDiffCellDensity(title = "adjusted z", outline = TRUE), ncol = 3)
+```
+
+On the Harmony graph the scan again picks the 5 % scale (neighborhoods of about 460 nuclei) and calls 7,506 of the
+9,758 nuclei at FDR 10 % (77 %; 87 % on the Conos graph): every OPC (log2 fold change -1.2), 92 % of the astrocytes (-1.1)
+and 79 % of the oligodendrocytes (+0.5), the three types with the largest composition loadings, with per-type p-values
+close to those on the Conos graph (0.008, adjusted 0.015; there 0.008-0.010, adjusted 0.019). The neurons, microglia and
+endothelial cells are not significant in the per-type test on either graph. The
+outlines enclose the three populations; on the oligodendrocytes they leave out the part of the cluster where the change
+is smallest.
+
+The kNN neighborhoods of the graph itself (`scale = NULL`: the stored units of `estimateCellDensity()`, about 100 cells
+each) are the other neighborhood definition available; they are one hop wide, so they cannot leak the way a kernel can.
+
+```{r density-knn, fig.width=10, fig.height=4.8, message=TRUE}
+cao$estimateCellDensity(method = "graph", name = "cell.density.knn")
+cao$estimateDiffCellDensity(name = "cell.density.knn", scale = NULL)
+cowplot::plot_grid(cao$plotDiffCellDensity(name = "cell.density.knn", what = "effect", title = "kNN units: density change (log2 FC)", outline = TRUE),
+                   cao$plotDiffCellDensity(name = "cell.density.knn", title = "kNN units: adjusted z", outline = TRUE), ncol = 2)
+```
+
+The kNN neighborhoods (97 nuclei) call fewer nuclei (2,958 at FDR 10 %): 73 % of the astrocytes and 76 % of the OPCs
+(log2 -1.8) but only 12 % of the oligodendrocytes, whose moderate change (+0.5) needs the larger neighborhoods to reach
+significance per nucleus; the per-type test calls the astrocytes and OPCs (adjusted p 0.029), not the oligodendrocytes (0.29).
+
+## Cluster-free expression shifts
+
+```{r cluster-free-shifts, fig.width=13, fig.height=6, message=TRUE, warning=FALSE}
+cao$estimateClusterFreeExpressionShifts(n.permutations = 499)
+cao$plotClusterFreeExpressionShifts(adjusted = TRUE, font.size = c(2, 3), outline = TRUE)
+```
+
+The expression-shift map is as on the Conos graph: the scan picks 3 %, 97 % of the nuclei pass FDR 5 % here and 96 % there,
+and all six types are significant here (five there: the endothelial cells, 72 nuclei, are called at 0.017 instead of
+0.062). The strongest shifts are in the OPCs and astrocytes (median 1.6), then the endothelial cells (1.5), the
+oligodendrocytes and microglia (1.4); the neurons have the smallest (1.3) and only 47 % of their nuclei are called, where
+on the Conos graph all of them are (shift 1.39).
+
+```{r cluster-free-summary, fig.width=11, fig.height=4.5}
+cao$estimateClusterFreeSummary("cell.density")
+cao$estimateClusterFreeSummary("cluster.free.expr.shifts")
+cowplot::plot_grid(cao$plotClusterFreeSummary("cell.density"), cao$plotClusterFreeSummary("cluster.free.expr.shifts"), ncol = 2)
+```
+
+Per type the two maps agree with the Conos notebook: three populations change in density (OPCs, astrocytes,
+oligodendrocytes) and every type changes in expression. On this small cohort of well-separated populations the alignment
+makes little difference; the neurons are the one population whose per-nucleus calls depend on the graph.
+
+## Session info
+
+```{r session}
+sessionInfo()
+```
